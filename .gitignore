@@ -1,0 +1,13 @@
+# Ignore environment files
+.env
+
+# Ignore node dependencies
+node_modules/
+
+# Ignore databases
+*.db
+*.sqlite
+
+# Ignore uploads
+uploads/
+

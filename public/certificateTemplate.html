@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Certificate</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <style>
+    body { display:flex; justify-content:center; align-items:center; background:#f9fafb; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; padding:20px; }
+    .certificate { background:#fff; border:5px solid #0f172a; border-radius:20px; padding:40px; width:800px; box-shadow:0 10px 25px rgba(0,0,0,.25); text-align:center; }
+    .certificate h1 { font-size:32px; margin-bottom:10px; color:#0f172a; }
+    .certificate h2 { font-size:24px; margin:10px 0; }
+    .certificate p { font-size:18px; margin:6px 0; }
+    .certificate .muted { color:#555; margin-top:15px; }
+    .qr { margin-top:20px; }
+  </style>
+</head>
+<body>
+  <div class="certificate">
+    <h1>Certificate of Completion</h1>
+    <p>This certifies that</p>
+    <h2 id="studentName">[Student]</h2>
+    <p>has completed</p>
+    <h2 id="courseName">[Course]</h2>
+    <p>under</p>
+    <h3 id="universityName">[University]</h3>
+    <p class="muted">Issued on <span id="issueDate">[Date]</span></p>
+    <div class="qr">
+      <img id="qrCode" src="" alt="QR Code" width="120"/>
+    </div>
+  </div>
+
+  <script>
+    const p = new URLSearchParams(location.search);
+    const s = p.get('student') || 'Student';
+    const c = p.get('course') || 'Course';
+    const u = p.get('uni') || 'University';
+    const id = p.get('id') || 'ABC123';
+    document.getElementById('studentName').textContent = s;
+    document.getElementById('courseName').textContent = c;
+    document.getElementById('universityName').textContent = u;
+    document.getElementById('issueDate').textContent = new Date().toLocaleDateString();
+    fetch('/generate-qr?data='+encodeURIComponent(id))
+      .then(r=>r.text())
+      .then(url=> document.getElementById('qrCode').src = url);
+  </script>
+</body>
+</html>

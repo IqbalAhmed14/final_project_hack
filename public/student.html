@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Panel — ABC</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<header><h2>Student Dashboard <span id="studName" class="muted"></span></h2></header>
+
+<main class="container">
+  <section class="card">
+    <h3>Universities</h3>
+    <div class="grid2">
+      <select id="allUniversities"></select>
+      <button id="joinUniversityBtn" class="primary">Join</button>
+      <button id="studentRefreshBtn" class="secondary">Refresh</button>
+    </div>
+    <h4 style="margin-top:10px">My Universities</h4>
+    <ul id="myUniversities" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>Browse Courses by University</h3>
+    <div class="grid2">
+      <select id="browseUniversitySelect"></select>
+      <button id="loadCoursesBtn" class="primary">Load Courses</button>
+    </div>
+    <ul id="coursesList" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>My Enrollments</h3>
+    <ul id="enrolledList" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>Upload Work</h3>
+    <div class="grid2">
+      <select id="submitCourse"></select>
+      <input type="file" id="submitFile" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"/>
+      <button id="submitBtn" class="primary">Upload</button>
+    </div>
+    <ul id="mySubmissions" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>Certificates / Equivalency</h3>
+    <div class="grid2">
+      <input id="equivSourceSerial" placeholder="Source certificate serial"/>
+      <select id="equivTargetUniversity"></select>
+      <button id="requestEquivalencyBtn" class="primary">Request Equivalency</button>
+    </div>
+    <ul id="myCertificates" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>Chatbot</h3>
+    <div class="grid2">
+      <input type="text" id="chatInput" placeholder="Ask something..."/>
+      <button id="chatBtn" class="primary">Send</button>
+    </div>
+    <pre id="chatReply" class="block"></pre>
+  </section>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/script.js"></script>
+</body>
+</html>

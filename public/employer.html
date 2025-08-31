@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Employer — Verify</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<header><h2>Employer Verification</h2></header>
+<main class="container">
+  <section class="card">
+    <h3>Verify by Serial</h3>
+    <div class="grid2">
+      <input id="verifySerial" placeholder="Enter serial e.g. COURSE-..." />
+      <button id="verifyBtn" class="primary">Verify</button>
+    </div>
+    <pre id="verifyOut" class="block"></pre>
+  </section>
+  <section class="card">
+    <h3>Or scan QR</h3>
+    <p class="muted">Scan the QR on the certificate — it opens <code>/verify/:serial</code>.</p>
+  </section>
+</main>
+<script>
+  document.getElementById('verifyBtn').onclick = async ()=>{
+    const s = document.getElementById('verifySerial').value.trim();
+    if(!s) return alert('Enter serial');
+    const r = await fetch('/certificate/'+encodeURIComponent(s));
+    const d = await r.json();
+    document.getElementById('verifyOut').textContent = JSON.stringify(d,null,2);
+  };
+</script>
+</body>
+</html>

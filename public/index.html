@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ABC — Login / Signup</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <style>
+    .container { max-width: 380px; margin: 60px auto; }
+    #msg { color: #ff8a8a; margin-bottom: 10px; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <div class="container card">
+    <h2 id="formTitle">Login</h2>
+    <div id="msg"></div>
+
+    <form id="loginForm">
+      <input id="loginUsername" placeholder="Username" />
+      <input id="loginPassword" type="password" placeholder="Password" />
+      <div class="row">
+        <button id="loginBtn" type="submit" class="primary">Login</button>
+      </div>
+      <p class="muted">Don’t have an account? <a id="showSignup" href="#">Signup</a></p>
+    </form>
+
+    <form id="signupForm" class="hidden">
+      <input id="signupUsername" placeholder="Username" />
+      <input id="signupPassword" type="password" placeholder="Password" />
+      <select id="signupRole">
+        <option value="student">Student</option>
+        <option value="faculty">Faculty</option>
+        <option value="admin">Admin</option>
+      </select>
+      <div class="row">
+        <button id="signupBtn" type="submit" class="primary">Create Account</button>
+      </div>
+      <p class="muted">Already have an account? <a id="showLogin" href="#">Login</a></p>
+    </form>
+  </div>
+
+  <script>
+    const msg = document.getElementById('msg');
+    const loginForm = document.getElementById('loginForm');
+    const signupForm = document.getElementById('signupForm');
+
+    document.getElementById('showSignup').onclick = (e)=>{ e.preventDefault(); loginForm.classList.add('hidden'); signupForm.classList.remove('hidden'); document.getElementById('formTitle').textContent='Signup'; msg.textContent=''; };
+    document.getElementById('showLogin').onclick = (e)=>{ e.preventDefault(); signupForm.classList.add('hidden'); loginForm.classList.remove('hidden'); document.getElementById('formTitle').textContent='Login'; msg.textContent=''; };
+
+    loginForm.onsubmit = async (e)=>{
+      e.preventDefault();
+      const username = document.getElementById('loginUsername').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
+      if(!username || !password) return msg.textContent='Enter username & password';
+
+      const res = await fetch('/login',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password })});
+      const data = await res.json();
+      if(!data.ok) return msg.textContent = data.error || 'Login failed';
+
+      localStorage.setItem('user', JSON.stringify(data.user));
+      const role = data.user.role;
+      if(role==='admin') location.href='admin.html';
+      else if(role==='faculty') location.href='faculty.html';
+      else location.href='student.html';
+    };
+
+    signupForm.onsubmit = async (e)=>{
+      e.preventDefault();
+      const username = document.getElementById('signupUsername').value.trim();
+      const password = document.getElementById('signupPassword').value.trim();
+      const role = document.getElementById('signupRole').value;
+      if(!username || !password) return msg.textContent='Enter username & password';
+
+      const res = await fetch('/signup',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password, role })});
+      const data = await res.json();
+      if(!data.ok) return msg.textContent = data.error || 'Signup failed';
+      msg.style.color='lightgreen';
+      msg.textContent='Signup successful. Please login.';
+      document.getElementById('showLogin').click();
+    };
+  </script>
+</body>
+</html>

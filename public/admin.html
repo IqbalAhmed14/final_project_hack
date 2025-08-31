@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard — ABC</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+  <header><h2>Admin Dashboard <span id="adminName" class="muted"></span></h2></header>
+  <main class="container">
+    <section class="card">
+      <h3>Add University</h3>
+      <div class="grid2">
+        <input id="uniName" placeholder="University Name"/>
+        <button id="addUniversityBtn" class="primary">Add</button>
+      </div>
+      <h4 style="margin-top:10px">My Universities</h4>
+      <ul id="universitiesList" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h3>Add Course</h3>
+      <div class="grid2">
+        <select id="courseUniversity"></select>
+        <input id="courseCode" placeholder="Course Code"/>
+        <input id="courseTitle" placeholder="Course Title"/>
+        <input id="courseCredits" type="number" placeholder="Credits"/>
+        <input id="courseNotes" type="file"/>
+        <input id="courseFacultyId" type="number" placeholder="Assign Faculty ID (optional)"/>
+        <button id="addCourseBtn" class="primary">Add</button>
+      </div>
+      <ul id="coursesList" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h3>Student Enrollments (All my universities)</h3>
+      <ul id="adminEnrollments" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h3>Submissions (All my universities)</h3>
+      <ul id="adminSubmissions" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h3>Certificates (from my universities)</h3>
+      <ul id="adminCertificates" class="list"></ul>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/script.js"></script>
+</body>
+</html>

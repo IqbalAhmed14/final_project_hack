@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Accreditation Body — Validate</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<header><h2>Accreditation Portal</h2></header>
+<main class="container">
+  <section class="card">
+    <h3>Validate Certificate Serial → Blockchain</h3>
+    <div class="grid2">
+      <input id="accSerial" placeholder="Enter certificate serial"/>
+      <button id="accValidateBtn" class="primary">Validate</button>
+    </div>
+    <pre id="accResult" class="block"></pre>
+  </section>
+</main>
+<script>
+  document.getElementById('accValidateBtn').onclick = async ()=>{
+    const serial = document.getElementById('accSerial').value.trim();
+    if(!serial) return alert('Enter serial');
+    const r = await fetch('/accreditation/validate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ serial })
+    });
+    const d = await r.json();
+    document.getElementById('accResult').textContent = JSON.stringify(d,null,2);
+  };
+</script>
+</body>
+</html>

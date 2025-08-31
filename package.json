@@ -1,0 +1,23 @@
+{
+  "name": "abc-erp",
+  "version": "1.0.0",
+  "description": "ABC ERP — Universities, Courses, Enrollments, Submissions, Certificates, Equivalency, QR + Blockchain-lite",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon --watch server.js --watch db.js server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.8.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

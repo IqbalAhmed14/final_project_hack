@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Faculty Dashboard — ABC</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<header><h2>Faculty Dashboard <span id="facName" class="muted"></span></span></h2></header>
+
+<main class="container">
+  <section class="card">
+    <h3>My Courses</h3>
+    <ul id="facCourses" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>Enrollments in My Courses</h3>
+    <ul id="facEnrollments" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h3>Student Submissions</h3>
+    <ul id="facSubmissions" class="list"></ul>
+  </section>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/script.js"></script>
+</body>
+</html>
