@@ -17,9 +17,6 @@ const fs = require('fs');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const cors = require('cors');
-// ➕ Add after other requires
-const natural = require('natural');
-const { TfIdf, PorterStemmer } = natural;
 
 require('dotenv').config();
 
@@ -264,9 +261,6 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     const credit_value = Number(req.body.credit_value);
     const faculty_id = req.body.faculty_id ? Number(req.body.faculty_id) : null;
 
-    // 🔹 NEW: Capture course description from form
-    const description = (req.body.description || '').trim();
-
     if (!admin_id || !university_id || !code || !title || !credit_value) {
       return res.json({ ok: false, error: 'Missing fields' });
     }
@@ -307,11 +301,11 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
       notes_url = '/uploads/' + req.file.filename;
     }
 
-    // 🔹 Updated SQL: add description
+    // Insert course
     const r = await run(
-      `INSERT INTO courses(code,title,credit_value,university_id,faculty_id,notes_filename,notes_url,description)
-       VALUES(?,?,?,?,?,?,?,?)`,
-      [code, title, credit_value, university_id, faculty_id, notes_filename, notes_url, description]
+      `INSERT INTO courses(code,title,credit_value,university_id,faculty_id,notes_filename,notes_url)
+       VALUES(?,?,?,?,?,?,?)`,
+      [code, title, credit_value, university_id, faculty_id, notes_filename, notes_url]
     );
 
     const course = await get(`SELECT * FROM courses WHERE id=?`, [r.lastID]);
@@ -325,7 +319,6 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     res.json({ ok: false, error: 'Failed to add course' });
   }
 });
-
 
 
 
@@ -709,79 +702,38 @@ app.get('/admin/certificates', async (req, res) => {
 });
 
 // Student: create an equivalency certificate (auto-issued)
-// ❌ Replace existing /student/equivalency with this:
 app.post('/student/equivalency', async (req, res) => {
   try {
     const student_id = Number(req.body.student_id);
     const source_serial = (req.body.source_serial || '').trim();
     const target_university_id = Number(req.body.target_university_id);
-
     if (!student_id || !source_serial || !target_university_id)
       return res.json({ ok: false, error: 'missing fields' });
 
-    // find base certificate
     const base = await get(
       `SELECT * FROM certificates WHERE serial=? AND student_id=?`,
       [source_serial, student_id]
     );
     if (!base) return res.json({ ok: false, error: 'base certificate not found' });
 
-    const baseCourse = await get(`SELECT * FROM courses WHERE id=?`, [base.course_id]);
-    if (!baseCourse) return res.json({ ok: false, error: 'base course not found' });
+    const targetUni = await get(`SELECT * FROM universities WHERE id=?`, [
+      target_university_id,
+    ]);
+    if (!targetUni)
+      return res.json({ ok: false, error: 'target university not found' });
 
-    // get all target uni courses
-    const targetCourses = await all(
-      `SELECT * FROM courses WHERE university_id=?`,
-      [target_university_id]
-    );
-    if (!targetCourses.length)
-      return res.json({ ok: false, error: 'target university has no courses' });
-
-    // NLP similarity
-    let bestMatch = null, bestScore = 0;
-    const tfidf = new TfIdf();
-
-    targetCourses.forEach(tc => {
-      const d1 = (baseCourse.description || baseCourse.title || '').toLowerCase();
-      const d2 = (tc.description || tc.title || '').toLowerCase();
-
-      tfidf.addDocument(d1);
-      tfidf.addDocument(d2);
-
-      let sim = natural.JaroWinklerDistance(d1, d2); // fast similarity
-      if (sim > bestScore) {
-        bestScore = sim;
-        bestMatch = tc;
-      }
-    });
-
-    const percent = Math.round(bestScore * 100);
-
-    if (percent < 80) {
-      return res.json({
-        ok: false,
-        match: bestMatch ? bestMatch.title : null,
-        similarity: percent,
-        error: 'Equivalency rejected (less than 80% match)',
-      });
-    }
-
-    // If >= 80%, issue equivalency certificate
     const s = serial('EQUIV');
     const payload = {
       serial: s,
       type: 'equivalency',
       base_serial: source_serial,
       student_id,
+      course_id: base.course_id,
       source_university_id: base.source_university_id,
       target_university_id,
-      target_university: (await get(`SELECT name FROM universities WHERE id=?`, [target_university_id])).name,
-      matched_course_id: bestMatch.id,
-      matched_course: bestMatch.title,
-      similarity_percent: percent,
+      target_university: targetUni.name,
       issued_at: now(),
     };
-
     const json = JSON.stringify(payload);
     const hash = sha256(json);
     const qr = await QRCode.toDataURL(
@@ -791,22 +743,24 @@ app.post('/student/equivalency', async (req, res) => {
     await run(
       `INSERT INTO certificates(serial,type,student_id,course_id,source_university_id,target_university_id,status,data_json,hash,qr_data_url)
        VALUES(?,?,?,?,?,?, 'issued', ?, ?, ?)`,
-      [s, 'equivalency', student_id, base.course_id, base.source_university_id, target_university_id, json, hash, qr]
+      [
+        s,
+        'equivalency',
+        student_id,
+        base.course_id,
+        base.source_university_id,
+        target_university_id,
+        json,
+        hash,
+        qr,
+      ]
     );
-
-    res.json({
-      ok: true,
-      serial: s,
-      match: bestMatch.title,
-      similarity: percent,
-      qr_data_url: qr,
-    });
+    res.json({ ok: true, serial: s, qr_data_url: qr });
   } catch (e) {
     console.error('equivalency error:', e.message);
     res.json({ ok: false, error: 'equivalency failed' });
   }
 });
-
 
 // Accreditation → validate to blockchain
 app.post('/accreditation/validate', async (req, res) => {
@@ -1021,16 +975,8 @@ io.on('connection', (socket) => {
 /* =========================================================
  * SERVER START
  * =======================================================*/
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server on http://localhost:${PORT}`);
-  console.log(`🌐 LAN: http://YOUR_LAN_IP:${PORT}  (Settings > Network)`);
-});
+const PORT = process.env.PORT || 3000;
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`❌ Port ${PORT} busy. Trying 3001...`);
-    server.listen(3001, '0.0.0.0', () => console.log(`✅ Server on http://localhost:3001`));
-  } else {
-    console.error('Server error:', err);
-  }
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
