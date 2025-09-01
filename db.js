@@ -306,6 +306,39 @@ db.all(`PRAGMA table_info(courses)`, (err, columns) => {
   // Index for faster attendance queries
   db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_enrollment ON attendance(enrollment_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)`);
+  db.get(`PRAGMA table_info(users)`, (err, row) => {
+  if (err) {
+    console.error('PRAGMA table_info error:', err.message);
+    return;
+  }
+  
+  // If no rows returned, table might not exist yet
+  if (!row) {
+    console.log('Users table may not exist yet, skipping CGPA check');
+    return;
+  }
+  
+  // Now get all columns
+  db.all(`PRAGMA table_info(users)`, (err, columns) => {
+    if (err) {
+      console.error('PRAGMA table_info error:', err.message);
+      return;
+    }
+    
+    if (!columns || !Array.isArray(columns)) {
+      console.error('No columns data received');
+      return;
+    }
+    
+    const hasCGPA = columns.some(col => col.name === 'cgpa');
+    if (!hasCGPA) {
+      db.run(`ALTER TABLE users ADD COLUMN cgpa REAL DEFAULT 0.0`, (err) => {
+        if (err) console.error('ALTER TABLE add cgpa failed:', err.message);
+        else console.log('✅ Added cgpa column to users');
+      });
+    }
+  });
+});
 });  // ← This is the end of db.serialize()
 
 // Debug: show created tables
@@ -315,26 +348,8 @@ db.all("SELECT name FROM sqlite_master WHERE type='table'", [], (err, rows) => {
 });
 // Add this in your db.js after the existing user table setup
 // Add CGPA column to users table if it doesn't exist
-db.run(`PRAGMA table_info(users)`, (err, columns) => {
-  if (err) {
-    console.error('PRAGMA table_info error:', err.message);
-    return;
-  }
-  
-  // Check if columns is defined and is an array
-  if (!columns || !Array.isArray(columns)) {
-    console.error('No columns data received');
-    return;
-  }
-  
-  const hasCGPA = columns.some(col => col.name === 'cgpa');
-  if (!hasCGPA) {
-    db.run(`ALTER TABLE users ADD COLUMN cgpa REAL DEFAULT 0.0`, (err) => {
-      if (err) console.error('ALTER TABLE add cgpa failed:', err.message);
-      else console.log('✅ Added cgpa column to users');
-    });
-  }
-});
+// Add CGPA column to users table if it doesn't exist
+
 module.exports = db;
 
 
