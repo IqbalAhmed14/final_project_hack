@@ -75,6 +75,47 @@ const now = () => new Date().toISOString();
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const serial = (prefix) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+// =======================
+// CGPA CALCULATION FUNCTIONS
+// =======================
+
+// Grade point calculation
+function calculateGradePoint(marks) {
+  if (marks >= 90) return 4.0;
+  if (marks >= 80) return 3.5;
+  if (marks >= 70) return 3.0;
+  if (marks >= 60) return 2.5;
+  if (marks >= 50) return 2.0;
+  return 1.0;
+}
+
+// CGPA Calculation function
+async function calculateCGPA(student_id) {
+  try {
+    const completedCourses = await all(`
+      SELECT c.credit_value, e.marks 
+      FROM enrollments e
+      JOIN courses c ON e.course_id = c.id
+      WHERE e.student_id = ? AND e.status = 'completed' AND e.marks IS NOT NULL
+    `, [student_id]);
+
+    if (completedCourses.length === 0) return 0.0;
+
+    let totalCredits = 0;
+    let totalGradePoints = 0;
+
+    completedCourses.forEach(course => {
+      const gradePoint = calculateGradePoint(course.marks);
+      totalGradePoints += (gradePoint * course.credit_value);
+      totalCredits += course.credit_value;
+    });
+
+    return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0.0;
+  } catch (e) {
+    console.error('CGPA calculation error:', e);
+    return 0.0;
+  }
+}
 
 /* =========================================================
  * AUTH
@@ -414,6 +455,300 @@ app.post("/fees", async (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+// =======================
+// ADMISSIONS ENDPOINTS
+// =======================
+
+// Student applies for admission
+app.post('/admissions/apply', upload.single('documents'), async (req, res) => {
+  try {
+    const { student_id, full_name, email, phone, program_id, university_id } = req.body;
+    
+    if (!student_id || !full_name || !email || !phone || !program_id || !university_id) {
+      return res.status(400).json({ ok: false, error: "All fields are required" });
+    }
+
+    // Check if student already applied to this program
+    const existingApplication = await get(
+      `SELECT id FROM admissions WHERE student_id=? AND program_id=? AND university_id=?`,
+      [student_id, program_id, university_id]
+    );
+    
+    if (existingApplication) {
+      return res.status(400).json({ ok: false, error: "You have already applied to this program" });
+    }
+
+    let documents_url = null;
+    if (req.file) {
+      documents_url = '/uploads/' + req.file.filename;
+    }
+
+    const result = await run(
+      `INSERT INTO admissions (student_id, full_name, email, phone, program_id, university_id, documents_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [student_id, full_name, email, phone, program_id, university_id, documents_url]
+    );
+
+    // Get the complete application data for response
+    const application = await get(`
+      SELECT a.*, p.name as program_name, u.name as university_name
+      FROM admissions a
+      JOIN programs p ON a.program_id = p.id
+      JOIN universities u ON a.university_id = u.id
+      WHERE a.id = ?
+    `, [result.lastID]);
+
+    io.emit('newAdmissionApplication', application);
+    
+    res.json({ ok: true, application, message: "Application submitted successfully" });
+
+  } catch (err) {
+    console.error("Admission application error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Get admissions for admin review
+app.get('/admin/admissions', async (req, res) => {
+  try {
+    const admin_id = Number(req.query.admin_id);
+    
+    if (!admin_id) {
+      return res.status(400).json({ ok: false, error: "admin_id parameter is required" });
+    }
+
+    const rows = await all(`
+      SELECT a.*, p.name as program_name, u.name as university_name, us.username as student_username
+      FROM admissions a
+      JOIN programs p ON a.program_id = p.id
+      JOIN universities u ON a.university_id = u.id
+      JOIN users us ON a.student_id = us.id
+      WHERE u.admin_id = ?
+      ORDER BY a.applied_at DESC
+    `, [admin_id]);
+
+    res.json({ ok: true, applications: rows });
+
+  } catch (err) {
+    console.error("Get admissions error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Update admission status (approve/reject)
+app.post('/admin/admissions/update-status', async (req, res) => {
+  try {
+    const { admin_id, admission_id, status } = req.body;
+    
+    if (!admin_id || !admission_id || !status) {
+      return res.status(400).json({ ok: false, error: "All fields are required" });
+    }
+
+    // Verify admin has access to this admission
+    const admission = await get(`
+      SELECT a.* FROM admissions a
+      JOIN universities u ON a.university_id = u.id
+      WHERE a.id = ? AND u.admin_id = ?
+    `, [admission_id, admin_id]);
+
+    if (!admission) {
+      return res.status(403).json({ ok: false, error: "Access denied" });
+    }
+
+    await run(
+      `UPDATE admissions SET status=?, reviewed_at=CURRENT_TIMESTAMP, reviewed_by=? WHERE id=?`,
+      [status, admin_id, admission_id]
+    );
+
+    const updatedApplication = await get(`
+      SELECT a.*, p.name as program_name, u.name as university_name
+      FROM admissions a
+      JOIN programs p ON a.program_id = p.id
+      JOIN universities u ON a.university_id = u.id
+      WHERE a.id = ?
+    `, [admission_id]);
+
+    io.emit('admissionStatusUpdated', updatedApplication);
+    
+    res.json({ ok: true, application: updatedApplication, message: "Application status updated" });
+
+  } catch (err) {
+    console.error("Update admission status error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// =======================
+// HOSTEL ENDPOINTS
+// =======================
+
+// Get hostels by university
+app.get('/hostels/by-university', async (req, res) => {
+  try {
+    const university_id = Number(req.query.university_id);
+    
+    if (!university_id) {
+      return res.status(400).json({ ok: false, error: "university_id parameter is required" });
+    }
+
+    const rows = await all(
+      `SELECT * FROM hostels WHERE university_id = ? ORDER BY name`,
+      [university_id]
+    );
+
+    res.json({ ok: true, hostels: rows });
+
+  } catch (err) {
+    console.error("Get hostels error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Allocate hostel room to student
+app.post('/hostels/allocate', async (req, res) => {
+  try {
+    const { admin_id, student_id, hostel_id, room_number, academic_year, semester } = req.body;
+    
+    if (!admin_id || !student_id || !hostel_id || !room_number || !academic_year || !semester) {
+      return res.status(400).json({ ok: false, error: "All fields are required" });
+    }
+
+    // Verify admin has access to this hostel
+    const hostel = await get(`
+      SELECT h.* FROM hostels h
+      JOIN universities u ON h.university_id = u.id
+      WHERE h.id = ? AND u.admin_id = ?
+    `, [hostel_id, admin_id]);
+
+    if (!hostel) {
+      return res.status(403).json({ ok: false, error: "Access denied" });
+    }
+
+    // Check if room is already allocated
+    const existingAllocation = await get(
+      `SELECT id FROM hostel_allocations 
+       WHERE hostel_id=? AND room_number=? AND academic_year=? AND semester=? AND status='active'`,
+      [hostel_id, room_number, academic_year, semester]
+    );
+    
+    if (existingAllocation) {
+      return res.status(400).json({ ok: false, error: "Room already allocated for this semester" });
+    }
+
+    const result = await run(
+      `INSERT INTO hostel_allocations (student_id, hostel_id, room_number, academic_year, semester)
+       VALUES (?, ?, ?, ?, ?)`,
+      [student_id, hostel_id, room_number, academic_year, semester]
+    );
+
+    // Update hostel occupancy
+    await run(
+      `UPDATE hostels SET occupied_rooms = occupied_rooms + 1 WHERE id = ?`,
+      [hostel_id]
+    );
+
+    const allocation = await get(`
+      SELECT ha.*, h.name as hostel_name, u.username as student_username
+      FROM hostel_allocations ha
+      JOIN hostels h ON ha.hostel_id = h.id
+      JOIN users u ON ha.student_id = u.id
+      WHERE ha.id = ?
+    `, [result.lastID]);
+
+    io.emit('hostelAllocated', allocation);
+    
+    res.json({ ok: true, allocation, message: "Hostel room allocated successfully" });
+
+  } catch (err) {
+    console.error("Hostel allocation error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Get hostel allocations
+app.get('/hostels/allocations', async (req, res) => {
+  try {
+    const university_id = Number(req.query.university_id);
+    
+    if (!university_id) {
+      return res.status(400).json({ ok: false, error: "university_id parameter is required" });
+    }
+
+    const rows = await all(`
+      SELECT ha.*, h.name as hostel_name, u.username as student_username
+      FROM hostel_allocations ha
+      JOIN hostels h ON ha.hostel_id = h.id
+      JOIN users u ON ha.student_id = u.id
+      WHERE h.university_id = ?
+      ORDER BY ha.allocated_at DESC
+    `, [university_id]);
+
+    res.json({ ok: true, allocations: rows });
+
+  } catch (err) {
+    console.error("Get hostel allocations error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+// =======================
+// FEE MANAGEMENT ENDPOINTS
+// =======================
+
+// Process fee payment
+// =======================
+// FEE MANAGEMENT ENDPOINTS
+// =======================
+
+// Process fee payment
+app.post('/fees/payment', async (req, res) => {
+  try {
+    const { student_id, fee_type, amount, academic_year } = req.body;
+    
+    if (!student_id || !fee_type || !amount || !academic_year) {
+      return res.json({ ok: false, error: "All fields are required" });
+    }
+
+    // Generate receipt number
+    const receipt_number = `REC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    
+    // Insert into database
+    const result = await run(
+      `INSERT INTO fee_payments (student_id, fee_type, amount, academic_year, receipt_number)
+       VALUES (?, ?, ?, ?, ?)`,
+      [student_id, fee_type, amount, academic_year, receipt_number]
+    );
+
+    // Get student info for receipt
+    const student = await get(`SELECT username FROM users WHERE id = ?`, [student_id]);
+    
+    res.json({
+      ok: true,
+      payment_id: result.lastID,
+      receipt_number: receipt_number,
+      student_name: student.username,
+      message: "Payment successful!"
+    });
+
+  } catch (error) {
+    console.error("Fee payment error:", error);
+    res.json({ ok: false, error: "Payment failed" });
+  }
+});
+
+// Get student's payment history
+app.get('/fees/student/:student_id', async (req, res) => {
+  try {
+    const student_id = req.params.student_id;
+    const payments = await all(
+      `SELECT * FROM fee_payments WHERE student_id = ? ORDER BY payment_date DESC`,
+      [student_id]
+    );
+    res.json({ ok: true, payments: payments || [] });
+  } catch (error) {
+    console.error("Get payments error:", error);
+    res.json({ ok: false, error: "Failed to fetch payments", payments: [] });
+  }
+});
 /* =========================================================
  * COURSES
  * =======================================================*/
@@ -677,6 +1012,9 @@ app.post('/faculty/complete-enrollment', async (req, res) => {
       `UPDATE enrollments SET status='completed', approved_at=CURRENT_TIMESTAMP WHERE id=?`,
       [enrollment_id]
     );
+        // Calculate and update CGPA
+    const newCGPA = await calculateCGPA(enr.student_id);
+    await run(`UPDATE users SET cgpa=? WHERE id=?`, [newCGPA, enr.student_id]);
     await run(`UPDATE users SET credits=credits+? WHERE id=?`, [
       course.credit_value,
       enr.student_id,
@@ -702,6 +1040,7 @@ app.post('/faculty/complete-enrollment', async (req, res) => {
       credits: course.credit_value,
       marks,
       issued_at: now(),
+      cgpa: newCGPA
     };
     const json = JSON.stringify(payload);
     const hash = sha256(json);
@@ -749,6 +1088,18 @@ app.post('/student/submission', upload.single('file'), async (req, res) => {
   const sub = await get(`SELECT * FROM submissions WHERE id=?`, [r.lastID]);
   io.emit('submissionUploaded', sub);
   res.json({ ok: true, submission: sub });
+});
+// Get student CGPA
+app.get('/student/cgpa', async (req, res) => {
+  try {
+    const student_id = Number(req.query.student_id);
+    if (!student_id) return res.json({ ok: false, error: 'student_id required' });
+
+    const student = await get('SELECT cgpa FROM users WHERE id=?', [student_id]);
+    res.json({ ok: true, cgpa: student?.cgpa || 0.0 });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 // Student: my submissions
 app.get('/student/submissions', async (req, res) => {
@@ -1020,6 +1371,11 @@ app.post('/chatbot', async (req, res) => {
       if (!u) return res.json({ ok: false, error: 'User not found' });
       return res.json({ ok: true, reply: `${u.username}, your credits are ${u.credits}.` });
     }
+        if (text.includes('cgpa') && user_id) {
+      const u = await get('SELECT username,cgpa FROM users WHERE id=?', [user_id]);
+      if (!u) return res.json({ ok: false, error: 'User not found' });
+      return res.json({ ok: true, reply: `${u.username}, your CGPA is ${u.cgpa || 0.0}.` });
+    }
 
     if (text.includes('list course')) {
       const rows = await all(`
@@ -1123,6 +1479,87 @@ app.post('/admin/approveCertificate', async (req, res) => {
   );
   io.emit('certificateApproved', { id: cert.id, serial: cert.serial });
   return res.json({ ok: true });
+});
+// =======================
+// ATTENDANCE ENDPOINTS
+// =======================
+
+// Faculty: Mark attendance for a course
+app.post('/faculty/mark-attendance', async (req, res) => {
+    try {
+        const { faculty_id, enrollment_id, date, status } = req.body;
+        
+        // Verify faculty has access to this enrollment
+        const enrollment = await get(`
+            SELECT e.* FROM enrollments e
+            JOIN courses c ON e.course_id = c.id
+            WHERE e.id = ? AND c.faculty_id = ?
+        `, [enrollment_id, faculty_id]);
+        
+        if (!enrollment) {
+            return res.json({ ok: false, error: 'Access denied or enrollment not found' });
+        }
+
+        // Insert or update attendance
+        await run(`
+            INSERT OR REPLACE INTO attendance (enrollment_id, date, status, marked_by)
+            VALUES (?, ?, ?, ?)
+        `, [enrollment_id, date, status, faculty_id]);
+
+        res.json({ ok: true, message: 'Attendance marked' });
+    } catch (e) {
+        res.json({ ok: false, error: e.message });
+    }
+});
+
+// Student: Get attendance for a course
+app.get('/student/attendance', async (req, res) => {
+    try {
+        const { enrollment_id } = req.query;
+        
+        const attendance = await all(`
+            SELECT date, status FROM attendance 
+            WHERE enrollment_id = ? 
+            ORDER BY date DESC
+        `, [enrollment_id]);
+
+        // Calculate percentage
+        const total = attendance.length;
+        const present = attendance.filter(a => a.status === 'present').length;
+        const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
+
+        res.json({ ok: true, attendance, percentage, total, present });
+    } catch (e) {
+        res.json({ ok: false, error: e.message });
+    }
+});
+
+// Faculty: Get attendance for a course
+app.get('/faculty/course-attendance', async (req, res) => {
+    try {
+        const { course_id, faculty_id } = req.query;
+        
+        // Verify faculty access
+        const course = await get('SELECT id FROM courses WHERE id = ? AND faculty_id = ?', [course_id, faculty_id]);
+        if (!course) return res.json({ ok: false, error: 'Access denied' });
+
+        const attendance = await all(`
+            SELECT e.id as enrollment_id, u.username as student_name, 
+                   COUNT(a.id) as total_classes,
+                   SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) as present_count,
+                   ROUND(SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) * 100.0 / COUNT(a.id), 1) as percentage
+            FROM enrollments e
+            JOIN users u ON e.student_id = u.id
+            LEFT JOIN attendance a ON e.id = a.enrollment_id
+            WHERE e.course_id = ?
+            GROUP BY e.id
+            ORDER BY u.username
+        `, [course_id]);
+
+        res.json({ ok: true, attendance });
+    } catch (e) {
+        res.json({ ok: false, error: e.message });
+    }
 });
 
 /* =========================================================

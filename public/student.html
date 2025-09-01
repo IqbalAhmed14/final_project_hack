@@ -20,7 +20,58 @@
     <h4 style="margin-top:10px">My Universities</h4>
     <ul id="myUniversities" class="list"></ul>
   </section>
-
+  <!-- ======================= -->
+  <!-- ADMISSIONS APPLICATION -->
+  <!-- ======================= -->
+  <section class="card">
+    <h3>Admissions Application</h3>
+    <div class="grid2">
+      <select id="admissionUniversity"></select>
+      <select id="admissionProgram"></select>
+      <input type="text" id="admissionFullName" placeholder="Full Name">
+      <input type="email" id="admissionEmail" placeholder="Email">
+      <input type="tel" id="admissionPhone" placeholder="Phone">
+      <input type="file" id="admissionDocuments" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg">
+      <button id="applyAdmissionBtn" class="primary">Apply Now</button>
+    </div>
+    <div id="admissionStatus" class="muted" style="margin-top:10px"></div>
+  </section>
+  <!-- ======================= -->
+<!-- FEE PAYMENT SECTION -->
+<!-- ======================= -->
+<section class="card">
+    <h3>💳 Fee Payment</h3>
+    <div class="grid2">
+        <select id="feeType">
+            <option value="tuition">Tuition Fee</option>
+            <option value="hostel">Hostel Fee</option>
+            <option value="exam">Examination Fee</option>
+            <option value="library">Library Fee</option>
+            <option value="other">Other Fee</option>
+        </select>
+        <input type="number" id="feeAmount" placeholder="Amount ₹">
+        <input type="text" id="academicYear" placeholder="Academic Year (2024-25)">
+        <button id="payFeeBtn" class="primary">Pay Now</button>
+    </div>
+    <div id="feeStatus" style="margin-top:10px"></div>
+    <div id="feeReceipt"></div>
+    
+    <h4 style="margin-top:20px">Payment History</h4>
+    <ul id="paymentHistory" class="list"></ul>
+</section>
+  <!-- ======================= -->
+  <!-- ATTENDANCE SECTION -->
+  <!-- ======================= -->
+  <section class="card">
+    <h3>📊 Attendance</h3>
+    <select id="attendanceCourseSelect">
+        <option value="">Select enrolled course</option>
+    </select>
+    <div id="attendanceSummary">
+        <p class="muted">Select a course to view attendance</p>
+    </div>
+    <ul id="attendanceList" class="list"></ul>
+  </section>
   <section class="card">
     <h3>Browse Courses by University</h3>
     <div class="grid2">

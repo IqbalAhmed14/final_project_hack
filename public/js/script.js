@@ -14,9 +14,9 @@
   /* ---------------- Student Page ---------------- */
   if($('studName')){
     if(!guard('student')) return;
-    $('studName').textContent = `— ${user.username} (ID ${user.id}) • Credits: ${user.credits ?? 0}`;
+    $('studName').textContent = `— ${user.username} (ID ${user.id}) • Credits: ${user.credits ?? 0} • CGPA: ${user.cgpa ?? 0.0}`;
 
-    const allUnis = $('allUniversities');
+        const allUnis = $('allUniversities');
     const myUnis = $('myUniversities');
     const browseUni = $('browseUniversitySelect');
     const coursesList = $('coursesList');
@@ -25,8 +25,34 @@
     const mySubs = $('mySubmissions');
     const certsList = $('myCertificates');
     const equivTarget = $('equivTargetUniversity');
+    // =======================
+// ATTENDANCE VARIABLES (Student)
+// =======================
+const attendanceCourseSelect = $('attendanceCourseSelect');
+const attendanceSummary = $('attendanceSummary');
+const attendanceList = $('attendanceList');
+// =======================
+// FEE MANAGEMENT VARIABLES
+// =======================
+const feeType = $('feeType');
+const feeAmount = $('feeAmount');
+const academicYear = $('academicYear');
+const feeStatus = $('feeStatus');
+const feeReceipt = $('feeReceipt');
+const paymentHistory = $('paymentHistory');
+    // =======================
+    // ADMISSIONS VARIABLES
+    // =======================
+    const admissionUniversity = $('admissionUniversity');
+    const admissionProgram = $('admissionProgram');
+    const admissionFullName = $('admissionFullName');
+    const admissionEmail = $('admissionEmail');
+    const admissionPhone = $('admissionPhone');
+    const admissionDocuments = $('admissionDocuments');
+    const applyAdmissionBtn = $('applyAdmissionBtn');
+    const admissionStatus = $('admissionStatus');
 
-    async function loadAllUniversities(){
+       async function loadAllUniversities(){
       const d = await api('/universities');
       const unis = d.universities || [];
       allUnis.innerHTML = ''; browseUni.innerHTML=''; equivTarget.innerHTML='';
@@ -34,7 +60,95 @@
         const o1=document.createElement('option'); o1.value=u.id; o1.textContent=u.name; allUnis.appendChild(o1);
         const o2=document.createElement('option'); o2.value=u.id; o2.textContent=u.name; browseUni.appendChild(o2);
         const o3=document.createElement('option'); o3.value=u.id; o3.textContent=u.name; equivTarget.appendChild(o3);
+        
+        // Also add to admission university dropdown
+        const o4=document.createElement('option'); o4.value=u.id; o4.textContent=u.name; admissionUniversity.appendChild(o4);
       });
+    }
+
+    // =======================
+    // ADMISSIONS FUNCTIONS
+    // =======================
+    
+    // Load programs for selected university
+    async function loadAdmissionPrograms() {
+      const university_id = Number(admissionUniversity.value);
+      if (!university_id) {
+        admissionProgram.innerHTML = '';
+        return;
+      }
+      
+      try {
+        const d = await api(`/programs/by-university?university_id=${university_id}`);
+        admissionProgram.innerHTML = '';
+        
+        (d.programs || []).forEach(p => {
+          const option = document.createElement('option');
+          option.value = p.id;
+          option.textContent = p.name;
+          admissionProgram.appendChild(option);
+        });
+      } catch (error) {
+        console.error('Error loading admission programs:', error);
+        admissionProgram.innerHTML = '<option value="">Error loading programs</option>';
+      }
+    }
+
+    // Handle admission application
+    async function applyForAdmission() {
+      const university_id = Number(admissionUniversity.value);
+      const program_id = Number(admissionProgram.value);
+      const full_name = admissionFullName.value.trim();
+      const email = admissionEmail.value.trim();
+      const phone = admissionPhone.value.trim();
+      const documents = admissionDocuments.files[0];
+
+      if (!university_id || !program_id || !full_name || !email || !phone) {
+        admissionStatus.textContent = 'Please fill all required fields';
+        admissionStatus.style.color = '#ff6b6b';
+        return;
+      }
+
+      admissionStatus.textContent = 'Submitting application...';
+      admissionStatus.style.color = '#51cf66';
+
+      try {
+        const formData = new FormData();
+        formData.append('student_id', user.id);
+        formData.append('university_id', university_id);
+        formData.append('program_id', program_id);
+        formData.append('full_name', full_name);
+        formData.append('email', email);
+        formData.append('phone', phone);
+        if (documents) {
+          formData.append('documents', documents);
+        }
+
+        const response = await fetch('/admissions/apply', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.ok) {
+          admissionStatus.textContent = 'Application submitted successfully!';
+          admissionStatus.style.color = '#51cf66';
+          
+          // Clear form
+          admissionFullName.value = '';
+          admissionEmail.value = '';
+          admissionPhone.value = '';
+          admissionDocuments.value = '';
+        } else {
+          admissionStatus.textContent = 'Error: ' + (data.error || 'Application failed');
+          admissionStatus.style.color = '#ff6b6b';
+        }
+      } catch (error) {
+        console.error('Admission application error:', error);
+        admissionStatus.textContent = 'Network error. Please try again.';
+        admissionStatus.style.color = '#ff6b6b';
+      }
     }
     async function loadMyUniversities(){
       const d = await api(`/student/my-universities?student_id=${user.id}`);
@@ -174,6 +288,142 @@ const d = await api(url);
     $('loadCoursesBtn').onclick = loadCourses;
     $('submitBtn').onclick = uploadSubmission;
     $('requestEquivalencyBtn').onclick = requestEquivalency;
+    async function payFee() {
+    const type = feeType.value;
+    const amount = Number(feeAmount.value);
+    const year = academicYear.value.trim();
+
+    if (!type || !amount || !year) {
+        feeStatus.textContent = 'Please fill all fields';
+        feeStatus.style.color = '#ff6b6b';
+        return;
+    }
+
+    feeStatus.textContent = 'Processing payment...';
+    feeStatus.style.color = '#51cf66';
+
+    try {
+        const response = await api('/fees/payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                student_id: user.id,
+                fee_type: type,
+                amount: amount,
+                academic_year: year
+            })
+        });
+
+        if (response.ok) {
+            feeStatus.textContent = 'Payment successful!';
+            feeStatus.style.color = '#51cf66';
+            
+            // Show receipt
+            feeReceipt.innerHTML = `
+                <div style="border:1px solid #ccc; padding:15px; border-radius:8px; margin-top:10px">
+                    <h4>Payment Receipt</h4>
+                    <p><strong>Receipt No:</strong> ${response.receipt_number}</p>
+                    <p><strong>Student:</strong> ${response.student_name}</p>
+                    <p><strong>Fee Type:</strong> ${type}</p>
+                    <p><strong>Amount:</strong> ₹${amount}</p>
+                    <p><strong>Academic Year:</strong> ${year}</p>
+                    <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                </div>
+            `;
+
+            // Clear form
+            feeAmount.value = '';
+            academicYear.value = '';
+            
+            // Reload payment history
+            loadPaymentHistory();
+        } else {
+            feeStatus.textContent = 'Error: ' + (response.error || 'Payment failed');
+            feeStatus.style.color = '#ff6b6b';
+        }
+    } catch (error) {
+        console.error('Payment error:', error);
+        feeStatus.textContent = 'Network error. Please try again.';
+        feeStatus.style.color = '#ff6b6b';
+    }
+}
+$('payFeeBtn').onclick = payFee;
+async function loadPaymentHistory() {
+    try {
+        const response = await api(`/fees/student/${user.id}`);
+        paymentHistory.innerHTML = '';
+        
+        if (response.ok && response.payments.length > 0) {
+            response.payments.forEach(payment => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <div>
+                        <div><strong>${payment.fee_type}</strong> - ₹${payment.amount}</div>
+                        <div class="muted">Receipt: ${payment.receipt_number}</div>
+                        <div class="muted">${payment.academic_year} • ${new Date(payment.payment_date).toLocaleDateString()}</div>
+                    </div>
+                `;
+                paymentHistory.appendChild(li);
+            });
+        } else {
+            paymentHistory.innerHTML = '<li class="muted">No payment history found</li>';
+        }
+    } catch (error) {
+        console.error('Error loading payment history:', error);
+    }
+}
+// =======================
+// ATTENDANCE FUNCTIONS (Student)
+// =======================
+async function loadAttendanceCourses() {
+    const d = await api(`/student/my-enrollments?student_id=${user.id}`);
+    attendanceCourseSelect.innerHTML = '<option value="">Select enrolled course</option>';
+    
+    (d.enrollments || []).forEach(e => {
+        const option = document.createElement('option');
+        option.value = e.enrollment_id;
+        option.textContent = `${e.code} - ${e.title}`;
+        attendanceCourseSelect.appendChild(option);
+    });
+}
+
+async function loadAttendance() {
+    const enrollment_id = attendanceCourseSelect.value;
+    if (!enrollment_id) return;
+    
+    const response = await api(`/student/attendance?enrollment_id=${enrollment_id}`);
+    
+    if (response.ok) {
+        // Update summary
+        attendanceSummary.innerHTML = `
+            <div style="display:flex; gap:20px; margin:10px 0">
+                <div><strong>Total:</strong> ${response.total} classes</div>
+                <div><strong>Present:</strong> ${response.present}</div>
+                <div><strong>Percentage:</strong> ${response.percentage}%</div>
+            </div>
+        `;
+        
+        // Update list
+        attendanceList.innerHTML = '';
+        response.attendance.forEach(a => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <div>${new Date(a.date).toLocaleDateString()} - 
+                     <span class="${a.status === 'present' ? 'success' : 'error'}">${a.status.toUpperCase()}</span>
+                </div>
+            `;
+            attendanceList.appendChild(li);
+        });
+    }
+}
+
+// Add event listener
+attendanceCourseSelect.onchange = loadAttendance;
+
+    // =======================
+// FEE MANAGEMENT FUNCTIONS
+// =======================
+
 
     // Chatbot (client-side quick hints)
     $('chatBtn').onclick = async ()=>{
@@ -198,7 +448,8 @@ const d = await api(url);
     loadEnrollments();
     loadMySubmissions();
     loadCertificates();
-
+loadPaymentHistory();
+loadAttendanceCourses(); 
     if(socket){
       socket.on('courseAdded', loadCourses);
       socket.on('studentEnrolled', loadEnrollments);
@@ -232,6 +483,13 @@ const feeList = $('feesList');
   const enrollmentsList = $('adminEnrollments');
   const subsList = $('adminSubmissions');
   const certList = $('adminCertificates');
+  // =======================
+// ADMISSIONS & HOSTEL VARIABLES
+// =======================
+const admissionsList = $('adminAdmissionsList');
+const hostelUniSelect = $('hostelUniversity');
+const hostelsList = $('hostelsList');
+const allocationsList = $('hostelAllocationsList');
 
 
   // Add University
@@ -357,7 +615,107 @@ async function loadFees(university_id) {
     feeList.innerHTML = '<li class="muted">Error loading fees</li>';
   }
 }
+// =======================
+// ADMISSIONS FUNCTIONS
+// =======================
+async function loadAdmissions() {
+  try {
+    const d = await api(`/admin/admissions?admin_id=${user.id}`);
+    admissionsList.innerHTML = '';
+    
+    (d.applications || []).forEach(app => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div>
+          <div><b>${app.full_name}</b> — ${app.program_name} @ ${app.university_name}</div>
+          <div class="muted">Email: ${app.email} • Phone: ${app.phone}</div>
+          <div>Status: <span class="badge ${app.status}">${app.status}</span></div>
+          ${app.documents_url ? `<a href="${app.documents_url}" target="_blank">View Documents</a>` : ''}
+        </div>
+        <div>
+          <button class="primary" onclick="updateAdmissionStatus(${app.id}, 'approved')">Approve</button>
+          <button class="secondary" onclick="updateAdmissionStatus(${app.id}, 'rejected')">Reject</button>
+        </div>
+      `;
+      admissionsList.appendChild(li);
+    });
 
+    if ((d.applications || []).length === 0) {
+      admissionsList.innerHTML = '<li><span class="muted">No admission applications yet.</span></li>';
+    }
+  } catch (error) {
+    console.error('Error loading admissions:', error);
+    admissionsList.innerHTML = '<li><span class="muted">Error loading applications</span></li>';
+  }
+}
+
+async function updateAdmissionStatus(admission_id, status) {
+  try {
+    const r = await api('/admin/admissions/update-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_id: user.id, admission_id, status })
+    });
+    
+    if (r.ok) {
+      alert(`Application ${status}`);
+      loadAdmissions();
+    } else {
+      alert('Error: ' + (r.error || 'Update failed'));
+    }
+  } catch (error) {
+    console.error('Update admission error:', error);
+    alert('Network error updating status');
+  }
+}
+// =======================
+// HOSTEL FUNCTIONS
+// =======================
+async function loadHostels() {
+  const university_id = Number(hostelUniSelect.value);
+  if (!university_id) {
+    hostelsList.innerHTML = '';
+    allocationsList.innerHTML = '';
+    return;
+  }
+
+  try {
+    // Load hostels
+    const hostelsData = await api(`/hostels/by-university?university_id=${university_id}`);
+    hostelsList.innerHTML = '';
+    
+    (hostelsData.hostels || []).forEach(h => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div>
+          <div><b>${h.name}</b></div>
+          <div class="muted">Rooms: ${h.occupied_rooms}/${h.total_rooms} • $${h.fees_per_semester}/semester</div>
+          ${h.amenities ? `<div>Amenities: ${h.amenities}</div>` : ''}
+        </div>
+      `;
+      hostelsList.appendChild(li);
+    });
+
+    // Load allocations
+    const allocData = await api(`/hostels/allocations?university_id=${university_id}`);
+    allocationsList.innerHTML = '';
+    
+    (allocData.allocations || []).forEach(a => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div>
+          <div><b>${a.student_username}</b> — Room ${a.room_number}</div>
+          <div class="muted">${a.hostel_name} • ${a.academic_year} - Semester ${a.semester}</div>
+          <div>Status: <span class="badge">${a.status}</span></div>
+        </div>
+      `;
+      allocationsList.appendChild(li);
+    });
+
+  } catch (error) {
+    console.error('Error loading hostels:', error);
+  }
+}
 // Load Admin Universities
 async function loadAdminUniversities() {
   const d = await api(`/admin/universities?admin_id=${user.id}`);
@@ -366,25 +724,27 @@ async function loadAdminUniversities() {
   uniList.innerHTML = '';
   uniSelect.innerHTML = '';
 
-  (d.universities || []).forEach(u => {
-    const li = document.createElement('li');
-    li.innerHTML = `<div>#${u.id} — ${u.name}</div>`;
-    uniList.appendChild(li);
+ (d.universities || []).forEach(u => {
+  const li = document.createElement('li');
+  li.innerHTML = `<div>#${u.id} — ${u.name}</div>`;
+  uniList.appendChild(li);
 
-    const opt = document.createElement('option');
-    opt.value = u.id;
-    opt.textContent = u.name;
-    uniSelect.appendChild(opt);
-programUniSelect.appendChild(opt.cloneNode(true));
-feeUniSelect.appendChild(opt.cloneNode(true));
+  const opt = document.createElement('option');
+  opt.value = u.id;
+  opt.textContent = u.name;
+  uniSelect.appendChild(opt);
+  programUniSelect.appendChild(opt.cloneNode(true));
+  feeUniSelect.appendChild(opt.cloneNode(true));
+  hostelUniSelect.appendChild(opt.cloneNode(true)); // Add to hostel dropdown
+});
 
-  });
-
-  if ((d.universities || []).length > 0) {
+if ((d.universities || []).length > 0) {
   const firstUniId = uniSelect.value;
   loadCourses(firstUniId);
   loadPrograms(firstUniId);   // 👈 add
   loadFees(firstUniId);       // 👈 add
+  loadAdmissions();           // 👈 Load admissions
+  loadHostels();              // 👈 Load hostels
 } else {
   coursesList.innerHTML = '<li><span class="muted">Create a university to add courses.</span></li>';
 }
@@ -404,10 +764,25 @@ uniSelect.onchange = () => {
   loadCourses(uniSelect.value);
 };
 $('courseProgram').onchange = () => loadCourses(uniSelect.value);
+// Hostel university change listener
+hostelUniSelect.onchange = loadHostels;
 
 
+    $('joinUniversityBtn').onclick = async ()=>{
+      const university_id = Number(allUnis.value);
+      if(!university_id) return;
+      const r = await api('/student/join-university',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ student_id:user.id, university_id })});
+      if(!r.ok) return alert(r.error||'Join failed');
+      loadMyUniversities();
+    };
+    
+    // =======================
+    // ADMISSIONS EVENT LISTENERS
+    // =======================
+    admissionUniversity.onchange = loadAdmissionPrograms;
+    applyAdmissionBtn.onclick = applyForAdmission;
 
-
+    $('studentRefreshBtn').onclick = ()=>{ loadAllUniversities(); loadMyUniversities(); };
   // Add Course
   $('addCourseBtn').onclick = async () => {
     const code = $('courseCode').value.trim();
@@ -552,7 +927,16 @@ async function loadCourses(university_id) {
     const coursesBox = $('facCourses');
     const enrollBox = $('facEnrollments');
     const subsBox = $('facSubmissions');
+// =======================
+// ATTENDANCE VARIABLES (Faculty)
+// =======================
+const facultyCourseSelect = $('facultyCourseSelect');
+const attendanceMarking = $('attendanceMarking');
+const attendanceStudentsList = $('attendanceStudentsList');
+const facultyAttendanceSummary = $('facultyAttendanceSummary');
+const saveAttendanceBtn = $('saveAttendanceBtn');
 
+let currentAttendanceData = [];
     async function loadMyCourses(){
       const d = await api(`/faculty/my-courses?faculty_id=${user.id}`);
       coursesBox.innerHTML='';
@@ -633,6 +1017,84 @@ async function loadCourses(university_id) {
         subsBox.innerHTML = '<li><span class="muted">No submissions yet.</span></li>';
       }
     }
+    // =======================
+// ATTENDANCE FUNCTIONS (Faculty)
+// =======================
+async function loadFacultyAttendanceCourses() {
+    const d = await api(`/faculty/my-courses?faculty_id=${user.id}`);
+    facultyCourseSelect.innerHTML = '<option value="">Select your course</option>';
+    
+    (d.courses || []).forEach(c => {
+        const option = document.createElement('option');
+        option.value = c.id;
+        option.textContent = `${c.code} - ${c.title}`;
+        facultyCourseSelect.appendChild(option);
+    });
+}
+
+async function loadAttendanceStudents() {
+    const course_id = facultyCourseSelect.value;
+    if (!course_id) return;
+    
+    const response = await api(`/faculty/course-attendance?course_id=${course_id}&faculty_id=${user.id}`);
+    
+    if (response.ok) {
+        currentAttendanceData = response.attendance;
+        
+        // Show marking section
+        attendanceMarking.style.display = 'block';
+        
+        // Create student list with checkboxes
+        attendanceStudentsList.innerHTML = '';
+        response.attendance.forEach(student => {
+            const div = document.createElement('div');
+            div.style.margin = '5px 0';
+            div.innerHTML = `
+                <label>
+                    <input type="checkbox" data-enrollment="${student.enrollment_id}" checked>
+                    ${student.student_name} (${student.percentage}%)
+                </label>
+            `;
+            attendanceStudentsList.appendChild(div);
+        });
+        
+        // Show summary
+        facultyAttendanceSummary.innerHTML = `
+            <h4>Attendance Summary</h4>
+            ${response.attendance.map(s => 
+                `${s.student_name}: ${s.present_count}/${s.total_classes} (${s.percentage}%)`
+            ).join('<br>')}
+        `;
+    }
+}
+
+async function saveAttendance() {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const checkboxes = attendanceStudentsList.querySelectorAll('input[type="checkbox"]');
+    
+    for (const checkbox of checkboxes) {
+        const enrollment_id = checkbox.dataset.enrollment;
+        const status = checkbox.checked ? 'present' : 'absent';
+        
+        await api('/faculty/mark-attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                faculty_id: user.id,
+                enrollment_id: enrollment_id,
+                date: today,
+                status: status
+            })
+        });
+    }
+    
+    alert('Attendance saved for today!');
+    loadAttendanceStudents(); // Refresh
+}
+
+// Add event listeners
+facultyCourseSelect.onchange = loadAttendanceStudents;
+saveAttendanceBtn.onclick = saveAttendance;
 
     if(socket){
       socket.on('submissionUploaded', loadSubmissions);
@@ -644,5 +1106,6 @@ async function loadCourses(university_id) {
     loadMyCourses();
     loadEnrollments();
     loadSubmissions();
+    loadFacultyAttendanceCourses();
   }
 })();

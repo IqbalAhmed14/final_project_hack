@@ -14,7 +14,23 @@
     <h3>My Courses</h3>
     <ul id="facCourses" class="list"></ul>
   </section>
-
+  <!-- ======================= -->
+  <!-- FACULTY ATTENDANCE SECTION -->
+  <!-- ======================= -->
+  <section class="card">
+    <h3>📊 Course Attendance</h3>
+    <select id="facultyCourseSelect">
+        <option value="">Select your course</option>
+    </select>
+    
+    <div id="attendanceMarking" style="margin:15px 0; display:none">
+        <h4>Mark Today's Attendance</h4>
+        <div id="attendanceStudentsList"></div>
+        <button class="primary" id="saveAttendanceBtn">Save Attendance</button>
+    </div>
+    
+    <div id="facultyAttendanceSummary"></div>
+  </section>
   <section class="card">
     <h3>Enrollments in My Courses</h3>
     <ul id="facEnrollments" class="list"></ul>

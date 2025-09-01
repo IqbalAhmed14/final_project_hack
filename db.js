@@ -196,13 +196,135 @@ db.all(`PRAGMA table_info(courses)`, (err, columns) => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_certificates_student ON certificates(student_id)`);
-});
+      // =======================
+  // ADMISSIONS SYSTEM TABLES
+  // =======================
+  
+  // Admissions table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS admissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      full_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      program_id INTEGER NOT NULL,
+      university_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'under_review', 'approved', 'rejected')),
+      documents_url TEXT,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at DATETIME,
+      reviewed_by INTEGER,
+      FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(program_id) REFERENCES programs(id) ON DELETE CASCADE,
+      FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE,
+      FOREIGN KEY(reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  // =======================
+  // HOSTEL MANAGEMENT TABLES
+  // =======================
+  
+  // Hostels table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hostels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      university_id INTEGER NOT NULL,
+      total_rooms INTEGER NOT NULL,
+      occupied_rooms INTEGER DEFAULT 0,
+      fees_per_semester REAL NOT NULL,
+      amenities TEXT,
+      FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Hostel allocations table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hostel_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      hostel_id INTEGER NOT NULL,
+      room_number TEXT NOT NULL,
+      allocated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'vacated', 'transfer')),
+      academic_year TEXT,
+      semester TEXT,
+      FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY(hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,
+      UNIQUE(hostel_id, room_number, academic_year, semester)
+    )
+  `);
+
+  // =======================
+  // INDEXES FOR NEW TABLES
+  // =======================
+  
+  db.run(`CREATE INDEX IF NOT EXISTS idx_admissions_status ON admissions(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_admissions_student ON admissions(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_hostels_university ON hostels(university_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_hostel_allocations_student ON hostel_allocations(student_id)`);
+
+  // =======================
+  // FEE MANAGEMENT TABLES
+  // =======================
+  db.run(`
+    CREATE TABLE IF NOT EXISTS fee_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      fee_type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      academic_year TEXT NOT NULL,
+      payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      receipt_number TEXT UNIQUE NOT NULL,
+      status TEXT DEFAULT 'completed',
+      FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Index for faster queries
+  db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_student ON fee_payments(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_receipt ON fee_payments(receipt_number)`);
+    // =======================
+  // ATTENDANCE TABLE
+  // =======================
+  db.run(`
+    CREATE TABLE IF NOT EXISTS attendance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      enrollment_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      status TEXT CHECK(status IN ('present', 'absent')) DEFAULT 'absent',
+      marked_by INTEGER,
+      marked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (enrollment_id) REFERENCES enrollments(id) ON DELETE CASCADE,
+      FOREIGN KEY (marked_by) REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE(enrollment_id, date)
+    )
+  `);
+
+  // Index for faster attendance queries
+  db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_enrollment ON attendance(enrollment_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)`);
+});  // ← This is the end of db.serialize()
 
 // Debug: show created tables
 db.all("SELECT name FROM sqlite_master WHERE type='table'", [], (err, rows) => {
   if (err) console.error("Error:", err);
   else console.log("Tables created:", rows.map(r => r.name));
 });
-
+// Add this in your db.js after the existing user table setup
+db.run(`PRAGMA table_info(users)`, (err, columns) => {
+  if (err) return;
+  
+  const hasCGPA = columns.some(col => col.name === 'cgpa');
+  if (!hasCGPA) {
+    db.run(`ALTER TABLE users ADD COLUMN cgpa REAL DEFAULT 0.0`, (err) => {
+      if (err) console.error('ALTER TABLE add cgpa failed:', err.message);
+      else console.log('✅ Added cgpa column to users');
+    });
+  }
+});
 module.exports = db;
+
 
