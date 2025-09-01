@@ -314,8 +314,18 @@ db.all("SELECT name FROM sqlite_master WHERE type='table'", [], (err, rows) => {
   else console.log("Tables created:", rows.map(r => r.name));
 });
 // Add this in your db.js after the existing user table setup
+// Add CGPA column to users table if it doesn't exist
 db.run(`PRAGMA table_info(users)`, (err, columns) => {
-  if (err) return;
+  if (err) {
+    console.error('PRAGMA table_info error:', err.message);
+    return;
+  }
+  
+  // Check if columns is defined and is an array
+  if (!columns || !Array.isArray(columns)) {
+    console.error('No columns data received');
+    return;
+  }
   
   const hasCGPA = columns.some(col => col.name === 'cgpa');
   if (!hasCGPA) {
