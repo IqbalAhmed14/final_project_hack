@@ -45,9 +45,17 @@
       });
     }
     async function loadCourses(){
-      const uid = Number(browseUni.value);
-      if(!uid){ coursesList.innerHTML=''; return; }
-      const d = await api(`/courses/by-university?university_id=${uid}`);
+  const uid = Number(browseUni.value);
+  const pid = Number($('browseProgramSelect')?.value); // 👈 new program select
+
+  if(!uid){ coursesList.innerHTML=''; return; }
+const url = pid 
+  ? `/courses/by-program?university_id=${uid}&program_id=${pid}`
+  : `/courses/by-university?university_id=${uid}`;
+const d = await api(url);
+
+ 
+
       coursesList.innerHTML='';
       (d.courses||[]).forEach(c=>{
         const li=document.createElement('li');
@@ -202,95 +210,268 @@
   }
 
   /* ---------------- Admin Page ---------------- */
-  if($('adminName')){
-    if(!guard('admin')) return;
-    $('adminName').textContent = `— ${user.username} (ID ${user.id})`;
+  if ($('adminName')) {
+  if (!guard('admin')) return;
+  $('adminName').textContent = `— ${user.username} (ID ${user.id})`;
 
-    const uniName = $('uniName');
-    const uniList = $('universitiesList');
-    const uniSelect = $('courseUniversity');
-    const coursesList = $('coursesList');
-    const enrollmentsList = $('adminEnrollments');
-    const subsList = $('adminSubmissions');
-    const certList = $('adminCertificates');
+  const uniName = $('uniName');
+  const uniList = $('universitiesList');
+  const uniSelect = $('courseUniversity');
+  const programUniSelect = $('programUniversity');
+const programName = $('programName');
+const programList = $('programsList');
 
-    // Add University
-    $('addUniversityBtn').onclick = async ()=>{
-      const name = uniName.value.trim();
-      if(!name) return alert('Enter university name!');
-      const r = await api('/admin/university', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ admin_id:user.id, name })});
-      if(!r.ok) return alert(r.error||'Failed');
-      alert('University added.');
-      loadAdminUniversities();
-    };
+const feeUniSelect = $('feeUniversity');
+const feeProgramSelect = $('feeProgram');  // ✅ new
+const feeTypeInput = $('feeType');         // ✅ new
+const feeAmount = $('feeAmount');
+const feeList = $('feesList');
 
-    async function loadAdminUniversities(){
-      const d = await api(`/admin/universities?admin_id=${user.id}`);
-      uniList.innerHTML='';
-      uniSelect.innerHTML='';
-      (d.universities||[]).forEach(u=>{
-        const li=document.createElement('li');
-        li.innerHTML = `<div>#${u.id} — ${u.name}</div>`;
-        uniList.appendChild(li);
 
-        const opt = document.createElement('option');
-        opt.value = u.id; opt.textContent = u.name;
-        uniSelect.appendChild(opt);
+  const coursesList = $('coursesList');
+  const enrollmentsList = $('adminEnrollments');
+  const subsList = $('adminSubmissions');
+  const certList = $('adminCertificates');
+
+
+  // Add University
+ // Add University
+$('addUniversityBtn').onclick = async () => {
+  const name = uniName.value.trim();
+  if (!name) return alert('Enter university name!');
+  const r = await api('/admin/university', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admin_id: user.id, name })
+  });
+  if (!r.ok) return alert(r.error || 'Failed');
+  uniName.value = '';
+  alert('University added.');
+  loadAdminUniversities(); // refresh list
+};
+// Add Program
+// === Add Program ===
+// === Add Program === FIXED
+document.getElementById("addProgramBtn").onclick = async () => {
+  const uniId = document.getElementById("programUniversity").value;
+  const name = document.getElementById("programName").value;
+
+  if (!uniId || !name) {
+    alert("Please select a university and enter a program name.");
+    return;
+  }
+
+  try {
+    const res = await api('/programs/add', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ university_id: uniId, name }) 
+    });
+    
+    if (res.ok) {
+      alert("✅ Program added successfully!");
+      document.getElementById("programName").value = ''; // Clear input
+      loadPrograms(uniId); // Refresh list
+    } else {
+      alert("❌ Failed to add program: " + (res.error || "Unknown error"));
+    }
+  } catch (error) {
+    console.error('Add program error:', error);
+    alert("❌ Network error adding program");
+  }
+};
+// Add Fee
+// Add Fee - FIXED
+$('addFeeBtn').onclick = async () => {
+  const university_id = Number(feeUniSelect.value);
+  const program_id = Number(feeProgramSelect.value);
+  const type = feeTypeInput.value.trim();
+  const amount = Number(feeAmount.value);
+
+  if (!university_id || !program_id || !type || !amount) return alert('Fill all fields!');
+
+  try {
+    const r = await api('/admin/fee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_id: user.id, university_id, program_id, type, amount })
+    });
+    
+    if (!r.ok) {
+      alert(r.error || 'Failed to add fee');
+      return;
+    }
+    
+    feeAmount.value = '';
+    feeTypeInput.value = '';
+    alert('Fee added successfully!');
+    loadFees(university_id);
+  } catch (error) {
+    console.error('Add fee error:', error);
+    alert('Network error adding fee');
+  }
+};
+
+async function loadPrograms(university_id) {
+  try {
+    const d = await api(`/programs/by-university?university_id=${university_id}`);
+    programList.innerHTML = '';
+    $('courseProgram').innerHTML = '';   // reset select
+    feeProgramSelect.innerHTML = '';     // reset select
+
+    (d.programs || []).forEach(p => {
+      const li = document.createElement('li');
+      li.textContent = `${p.id}: ${p.name}`;
+      programList.appendChild(li);
+
+      // also add to selects
+      const opt1 = document.createElement('option');
+      opt1.value = p.id; 
+      opt1.textContent = p.name;
+      $('courseProgram').appendChild(opt1);
+
+      const opt2 = opt1.cloneNode(true);
+      feeProgramSelect.appendChild(opt2);
+    });
+  } catch (error) {
+    console.error('Error loading programs:', error);
+    programList.innerHTML = '<li class="muted">Error loading programs</li>';
+  }
+}
+async function loadFees(university_id) {
+  try {
+    const d = await api(`/fees/by-university?university_id=${university_id}`);
+    feeList.innerHTML = '';
+    
+    if (d.fees && d.fees.length > 0) {
+      d.fees.forEach(f => {
+        const li = document.createElement('li');
+        li.textContent = `Fee #${f.id} — ${f.type} • $${f.amount} (Program: ${f.program_name || f.program_id})`;
+        feeList.appendChild(li);
       });
-      if((d.universities||[]).length>0){
-        loadCourses(uniSelect.value);
-      } else {
-        coursesList.innerHTML = '<li><span class="muted">Create a university to add courses.</span></li>';
-      }
-      loadEnrollments();
-      loadSubmissions();
-      loadCertificates();
+    } else {
+      feeList.innerHTML = '<li class="muted">No fees found for this university</li>';
+    }
+  } catch (error) {
+    console.error('Error loading fees:', error);
+    feeList.innerHTML = '<li class="muted">Error loading fees</li>';
+  }
+}
+
+// Load Admin Universities
+async function loadAdminUniversities() {
+  const d = await api(`/admin/universities?admin_id=${user.id}`);
+  
+
+  uniList.innerHTML = '';
+  uniSelect.innerHTML = '';
+
+  (d.universities || []).forEach(u => {
+    const li = document.createElement('li');
+    li.innerHTML = `<div>#${u.id} — ${u.name}</div>`;
+    uniList.appendChild(li);
+
+    const opt = document.createElement('option');
+    opt.value = u.id;
+    opt.textContent = u.name;
+    uniSelect.appendChild(opt);
+programUniSelect.appendChild(opt.cloneNode(true));
+feeUniSelect.appendChild(opt.cloneNode(true));
+
+  });
+
+  if ((d.universities || []).length > 0) {
+  const firstUniId = uniSelect.value;
+  loadCourses(firstUniId);
+  loadPrograms(firstUniId);   // 👈 add
+  loadFees(firstUniId);       // 👈 add
+} else {
+  coursesList.innerHTML = '<li><span class="muted">Create a university to add courses.</span></li>';
+}
+
+  loadEnrollments();
+  loadSubmissions();
+  loadCertificates();
+}
+
+feeUniSelect.onchange = () => {
+  loadPrograms(feeUniSelect.value); // fill feeProgram select
+  loadFees(feeUniSelect.value);
+};
+
+uniSelect.onchange = () => {
+  loadPrograms(uniSelect.value);    // fill courseProgram select
+  loadCourses(uniSelect.value);
+};
+$('courseProgram').onchange = () => loadCourses(uniSelect.value);
+
+
+
+
+  // Add Course
+  $('addCourseBtn').onclick = async () => {
+    const code = $('courseCode').value.trim();
+    const title = $('courseTitle').value.trim();
+    const credit_value = Number($('courseCredits').value);
+    const university_id = Number(uniSelect.value);
+    const program_id = Number($('courseProgram').value) || null;
+    const faculty_id = Number($('courseFacultyId').value) || '';
+    const file = $('courseNotes').files[0];
+
+    if (!code || !title || !credit_value || !university_id) return alert('Fill all fields!');
+
+
+    const fd = new FormData();
+    fd.append('admin_id', String(user.id));
+    fd.append('university_id', String(university_id));
+    fd.append('code', code);
+    fd.append('title', title);
+    fd.append('credit_value', String(credit_value));
+    if (faculty_id) fd.append('faculty_id', String(faculty_id));
+    if (program_id) fd.append('program_id', String(program_id));
+    if (file) fd.append('notes', file);
+
+    const r = await fetch('/admin/course', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!d.ok) return alert(d.error || 'Failed');
+    alert('Course added.');
+    loadCourses(university_id);
+  };
+
+  // Load Courses
+async function loadCourses(university_id) {
+  const pid = Number($('courseProgram')?.value) || null;
+  const url = pid 
+    ? `/courses/by-program?university_id=${university_id}&program_id=${pid}`
+    : `/courses/by-university?university_id=${university_id}`;
+
+  const d = await api(url);
+
+    coursesList.innerHTML = '';
+
+    if (!d.ok) {
+      coursesList.innerHTML = `<li><span class="muted">Error: ${d.error || 'Failed to load courses'}</span></li>`;
+      return;
     }
 
-    uniSelect.onchange = ()=> loadCourses(uniSelect.value);
+    (d.courses || []).forEach(c => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div>
+          <div><b>${c.code}</b> — ${c.title} (${c.credit_value} cr)</div>
+          <div class="muted">Faculty: ${c.faculty_name || '—'}</div>
+          ${c.notes_url ? `<a href="${c.notes_url}" target="_blank">Notes</a>` : ''}
+        </div>`;
+      coursesList.appendChild(li);
+    });
 
-    // Add Course
-    $('addCourseBtn').onclick = async ()=>{
-      const code = $('courseCode').value.trim();
-      const title = $('courseTitle').value.trim();
-      const credit_value = Number($('courseCredits').value);
-      const university_id = Number(uniSelect.value);
-      const faculty_id = Number($('courseFacultyId').value) || '';
-      const file = $('courseNotes').files[0];
-      if(!code || !title || !credit_value || !university_id) return alert('Fill all fields!');
-
-      const fd = new FormData();
-      fd.append('admin_id', String(user.id));
-      fd.append('university_id', String(university_id));
-      fd.append('code', code);
-      fd.append('title', title);
-      fd.append('credit_value', String(credit_value));
-      if(faculty_id) fd.append('faculty_id', String(faculty_id));
-      if(file) fd.append('notes', file);
-      const r = await fetch('/admin/course', { method:'POST', body: fd });
-      const d = await r.json();
-      if(!d.ok) return alert(d.error||'Failed');
-      alert('Course added.');
-      loadCourses(university_id);
-    };
-
-    async function loadCourses(university_id){
-      const d = await api(`/courses/by-university?university_id=${university_id}`);
-      coursesList.innerHTML='';
-      (d.courses||[]).forEach(c=>{
-        const li=document.createElement('li');
-        li.innerHTML = `
-          <div>
-            <div><b>${c.code}</b> — ${c.title} (${c.credit_value} cr)</div>
-            <div class="muted">Faculty: ${c.faculty_name || '—'}</div>
-            ${c.notes_url? `<a href="${c.notes_url}" target="_blank">Notes</a>`:''}
-          </div>`;
-        coursesList.appendChild(li);
-      });
-      if((d.courses||[]).length===0){
-        coursesList.innerHTML = '<li><span class="muted">No courses yet for this university.</span></li>';
-      }
+    if ((d.courses || []).length === 0) {
+      coursesList.innerHTML = '<li><span class="muted">No courses yet for this university.</span></li>';
     }
+  }
+
+  // 🚀 Load when page opens
+
 
     async function loadEnrollments(){
       const d = await api(`/admin/enrollments?admin_id=${user.id}`);

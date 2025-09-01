@@ -17,9 +17,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const cors = require('cors');
-
 require('dotenv').config();
-
 const db = require('./db');
 
 const app = express();
@@ -131,39 +129,38 @@ app.post('/login', async (req, res) => {
   }
 });
 
-
-/* =========================================================
- * UNIVERSITIES
- * =======================================================*/
-
-// Admin creates a university
-// ===== Add University (Admin only) =====
+// Add University
 app.post('/admin/university', async (req, res) => {
   try {
-    const admin_id = Number(req.body.admin_id);
+    let admin_id = null;
     const name = (req.body.name || '').trim();
 
-    if (!admin_id || !name)
-      return res.json({ ok: false, error: 'admin_id & name required' });
+    if (!name) {
+      return res.status(400).json({ error: "University name required" });
+    }
 
-    // Check if admin exists
-    const u = await get(`SELECT id, role FROM users WHERE id=?`, [admin_id]);
-    if (!u || u.role !== 'admin')
-      return res.json({ ok: false, error: 'Not an admin' });
+    // If admin_id passed in request → validate role
+    if (req.body.admin_id) {
+      const maybeId = Number(req.body.admin_id);
+      const u = await get(`SELECT id, role FROM users WHERE id=?`, [maybeId]);
+      if (!u || u.role !== 'admin') {
+        return res.json({ ok: false, error: 'Not an admin' });
+      }
+      admin_id = maybeId;
+    }
 
-    // Prevent duplicate universities
+    // Prevent duplicates
     const existing = await get(`SELECT id FROM universities WHERE name=?`, [name]);
     if (existing) {
       return res.json({ ok: false, error: 'University already exists' });
     }
 
-    // Insert new university
+    // Insert (admin_id will be NULL if none given)
     const r = await run(
       `INSERT INTO universities(name, admin_id) VALUES(?, ?)`,
       [name, admin_id]
     );
 
-    // Notify all clients via socket
     io.emit('universityAdded', { id: r.lastID, name });
 
     return res.json({ ok: true, id: r.lastID });
@@ -173,42 +170,29 @@ app.post('/admin/university', async (req, res) => {
   }
 });
 
-
-// Rename a university (admin must own it)
-app.put('/admin/university/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  const admin_id = Number(req.body.admin_id);
-  const name = (req.body.name || '').trim();
-  if (!id || !admin_id || !name)
-    return res.json({ ok: false, error: 'id, admin_id, name required' });
-
-  const uni = await get(
-    `SELECT * FROM universities WHERE id=? AND admin_id=?`,
-    [id, admin_id]
-  );
-  if (!uni) return res.json({ ok: false, error: 'Not your university' });
-
-  await run(`UPDATE universities SET name=? WHERE id=?`, [name, id]);
-  io.emit('universityUpdated', { id, name });
-  res.json({ ok: true });
-});
-
 // Public: list all universities
 app.get('/universities', async (req, res) => {
   const rows = await all(
-    `SELECT id,name,admin_id FROM universities ORDER BY name COLLATE NOCASE`
+    `SELECT id, name, admin_id FROM universities ORDER BY name COLLATE NOCASE`
   );
   res.json({ ok: true, universities: rows });
 });
 
-// Admin: list my universities
+// Admin: list my universities (FIXED ✅)
 app.get('/admin/universities', async (req, res) => {
-  const admin_id = Number(req.query.admin_id);
-  if (!admin_id) return res.json({ ok: true, universities: [] });
-  const rows = await all(
-    `SELECT * FROM universities WHERE admin_id=? ORDER BY name`,
-    [admin_id]
-  );
+  const maybeId = Number(req.query.admin_id);
+  let rows;
+  if (!req.query.admin_id || isNaN(maybeId)) {
+    // If no admin_id passed → return all universities
+    rows = await all(`SELECT * FROM universities ORDER BY name`);
+  } else {
+    rows = await all(
+      `SELECT * FROM universities 
+       WHERE admin_id=? OR admin_id IS NULL
+       ORDER BY name`,
+      [maybeId]
+    );
+  }
   res.json({ ok: true, universities: rows });
 });
 
@@ -224,7 +208,7 @@ app.post('/student/join-university', async (req, res) => {
     return res.json({ ok: false, error: 'not a student' });
 
   await run(
-    `INSERT OR IGNORE INTO university_members(student_id,university_id) VALUES(?,?)`,
+    `INSERT OR IGNORE INTO university_members(student_id, university_id) VALUES(?, ?)`,
     [student_id, university_id]
   );
   res.json({ ok: true });
@@ -234,18 +218,202 @@ app.post('/student/join-university', async (req, res) => {
 app.get('/student/my-universities', async (req, res) => {
   const student_id = Number(req.query.student_id);
   if (!student_id) return res.json({ ok: true, universities: [] });
+
   const rows = await all(
-    `
-    SELECT u.id,u.name
-    FROM university_members m
-    JOIN universities u ON u.id=m.university_id
-    WHERE m.student_id=?
-    ORDER BY u.name`,
+    `SELECT u.id, u.name
+     FROM university_members m
+     JOIN universities u ON u.id = m.university_id
+     WHERE m.student_id = ?
+     ORDER BY u.name`,
     [student_id]
   );
   res.json({ ok: true, universities: rows });
 });
 
+
+// =======================
+// PROGRAMS - CLEANED UP
+// =======================
+
+// Add Program
+app.post('/programs/add', async (req, res) => {
+  try {
+    const { university_id, name } = req.body;
+    
+    if (!university_id || !name) {
+      return res.status(400).json({ ok: false, error: "Missing fields: university_id and name are required" });
+    }
+
+    console.log("Add Program Request:", { university_id, name });
+
+    // Check if university exists
+    const university = await get(`SELECT id FROM universities WHERE id = ?`, [university_id]);
+    if (!university) {
+      return res.status(400).json({ ok: false, error: "University not found" });
+    }
+
+    // Check for duplicate program name in the same university
+    const existingProgram = await get(
+      `SELECT id FROM programs WHERE name = ? AND university_id = ?`,
+      [name, university_id]
+    );
+    
+    if (existingProgram) {
+      return res.status(400).json({ ok: false, error: "Program with this name already exists in this university" });
+    }
+
+    // Insert the new program
+    const result = await run(
+      `INSERT INTO programs (university_id, name) VALUES (?, ?)`,
+      [university_id, name]
+    );
+
+    console.log("Program added successfully:", result.lastID);
+    res.json({ ok: true, id: result.lastID, message: "Program added successfully" });
+
+  } catch (err) {
+    console.error("Add Program Error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error: " + err.message });
+  }
+});
+
+// Get Programs by University
+app.get('/programs/by-university', async (req, res) => {
+  try {
+    const university_id = Number(req.query.university_id);
+    
+    if (!university_id) {
+      return res.status(400).json({ ok: false, error: "university_id parameter is required" });
+    }
+
+    const rows = await all(
+      `SELECT id, name, university_id FROM programs WHERE university_id = ? ORDER BY name`,
+      [university_id]
+    );
+
+    res.json({ ok: true, programs: rows });
+
+  } catch (err) {
+    console.error("Get Programs Error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Get Programs of a University (legacy endpoint)
+app.get("/universities/:id/programs", async (req, res) => {
+  try {
+    const university_id = req.params.id;
+    const rows = await all(
+      `SELECT * FROM programs WHERE university_id = ? ORDER BY name`,
+      [university_id]
+    );
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+// =======================
+// FEES - ADD THESE ENDPOINTS
+// =======================
+
+// Get Fees by University
+app.get('/fees/by-university', async (req, res) => {
+  try {
+    const university_id = Number(req.query.university_id);
+    
+    if (!university_id) {
+      return res.status(400).json({ ok: false, error: "university_id parameter is required" });
+    }
+
+    const rows = await all(
+      `SELECT f.id, f.program_id, f.type, f.amount, p.name as program_name 
+       FROM fees f 
+       JOIN programs p ON f.program_id = p.id 
+       WHERE p.university_id = ? 
+       ORDER BY p.name, f.type`,
+      [university_id]
+    );
+
+    res.json({ ok: true, fees: rows });
+
+  } catch (err) {
+    console.error("Get Fees Error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Add Fee
+app.post('/admin/fee', async (req, res) => {
+  try {
+    const { admin_id, university_id, program_id, type, amount } = req.body;
+    
+    if (!admin_id || !university_id || !program_id || !type || !amount) {
+      return res.status(400).json({ ok: false, error: "All fields are required" });
+    }
+
+    // Verify admin has access to this university
+    const uni = await get(
+      `SELECT id FROM universities WHERE id=? AND admin_id=?`,
+      [university_id, admin_id]
+    );
+    if (!uni) {
+      return res.json({ ok: false, error: 'Not your university' });
+    }
+
+    // Verify program belongs to university
+    const program = await get(
+      `SELECT id FROM programs WHERE id=? AND university_id=?`,
+      [program_id, university_id]
+    );
+    if (!program) {
+      return res.json({ ok: false, error: 'Program not found in this university' });
+    }
+
+    const result = await run(
+      `INSERT INTO fees (program_id, type, amount) VALUES (?, ?, ?)`,
+      [program_id, type, amount]
+    );
+
+    res.json({ ok: true, id: result.lastID, message: "Fee added successfully" });
+
+  } catch (err) {
+    console.error("Add Fee Error:", err.message);
+    res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+// Get Fees of a Program (legacy endpoint)
+app.get("/programs/:id/fees", async (req, res) => {
+  try {
+    const program_id = req.params.id;
+    const rows = await all(
+      `SELECT * FROM fees WHERE program_id = ? ORDER BY type`,
+      [program_id]
+    );
+    res.json({ ok: true, fees: rows });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Add Fee for a Program (legacy endpoint)
+app.post("/fees", async (req, res) => {
+  try {
+    const { program_id, type, amount } = req.body;
+    if (!program_id || !type || !amount) {
+      return res.status(400).json({ ok: false, error: "Missing fields" });
+    }
+
+    const result = await run(
+      `INSERT INTO fees (program_id, type, amount) VALUES (?, ?, ?)`,
+      [program_id, type, amount]
+    );
+
+    res.json({ ok: true, id: result.lastID });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 /* =========================================================
  * COURSES
  * =======================================================*/
@@ -273,6 +441,17 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     if (!uni) {
       return res.json({ ok: false, error: 'Not your university' });
     }
+// ✅ Verify program belongs to this university
+if (req.body.program_id) {
+  const program_id = Number(req.body.program_id);
+  const prog = await get(
+    `SELECT id FROM programs WHERE id=? AND university_id=?`,
+    [program_id, university_id]
+  );
+  if (!prog) {
+    return res.json({ ok: false, error: 'Invalid program for this university' });
+  }
+}
 
     // ✅ Validate faculty if provided
     if (faculty_id) {
@@ -284,7 +463,6 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
         return res.json({ ok: false, error: 'User is not a faculty' });
       }
     }
-
     // Check duplicate course code in the same university
     const existing = await get(
       `SELECT id FROM courses WHERE code=? AND university_id=?`,
@@ -293,23 +471,20 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     if (existing) {
       return res.json({ ok: false, error: 'Course code already exists in this university' });
     }
-
     // Handle file upload (notes)
     let notes_filename = null, notes_url = null;
     if (req.file) {
       notes_filename = req.file.filename;
       notes_url = '/uploads/' + req.file.filename;
     }
-
     // Insert course
-    const r = await run(
-      `INSERT INTO courses(code,title,credit_value,university_id,faculty_id,notes_filename,notes_url)
-       VALUES(?,?,?,?,?,?,?)`,
-      [code, title, credit_value, university_id, faculty_id, notes_filename, notes_url]
-    );
-
+    const program_id = req.body.program_id ? Number(req.body.program_id) : null;
+const r = await run(
+  `INSERT INTO courses(code,title,credit_value,university_id,program_id,faculty_id,notes_filename,notes_url)
+   VALUES(?,?,?,?,?,?,?,?)`,
+  [code, title, credit_value, university_id, program_id, faculty_id, notes_filename, notes_url]
+);
     const course = await get(`SELECT * FROM courses WHERE id=?`, [r.lastID]);
-
     // Real-time update
     io.emit('courseAdded', course);
 
@@ -319,10 +494,6 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     res.json({ ok: false, error: 'Failed to add course' });
   }
 });
-
-
-
-// Public: courses by university
 // Public: courses by university
 app.get('/courses/by-university', async (req, res) => {
   const university_id = Number(req.query.university_id);
@@ -340,7 +511,24 @@ app.get('/courses/by-university', async (req, res) => {
   );
   res.json({ ok: true, courses: rows });
 });
+// Public: courses by program
+app.get('/courses/by-program', async (req, res) => {
+  const program_id = Number(req.query.program_id);
+  if (!program_id) return res.json({ ok: true, courses: [] });
+  const rows = await all(
+    `
+    SELECT c.*,
+           u.username AS faculty_name,
+           u.faculty_code AS faculty_code
+    FROM courses c
+    LEFT JOIN users u ON c.faculty_id = u.id
+    WHERE c.program_id=?
+    ORDER BY c.code`,
+    [program_id]
+  );
 
+  res.json({ ok: true, courses: rows });
+});
 
 // Faculty: my courses
 app.get('/faculty/my-courses', async (req, res) => {
@@ -357,11 +545,6 @@ app.get('/faculty/my-courses', async (req, res) => {
   );
   res.json({ ok: true, courses: rows });
 });
-
-/* =========================================================
- * ENROLLMENTS
- * =======================================================*/
-
 // Student enroll
 app.post('/student/enroll', async (req, res) => {
   const student_id = Number(req.body.student_id);
@@ -397,7 +580,6 @@ app.post('/student/enroll', async (req, res) => {
   io.emit('studentEnrolled', enr);
   res.json({ ok: true, enrollment: enr });
 });
-
 // Student: my enrollments
 app.get('/student/my-enrollments', async (req, res) => {
   const student_id = Number(req.query.student_id);
@@ -429,7 +611,6 @@ app.post('/student/request-completion', async (req, res) => {
   io.emit('completionRequested', row);
   res.json({ ok: true });
 });
-
 // Faculty: list enrollments in my courses
 app.get('/faculty/enrollments', async (req, res) => {
   const faculty_id = Number(req.query.faculty_id);
@@ -500,7 +681,6 @@ app.post('/faculty/complete-enrollment', async (req, res) => {
       course.credit_value,
       enr.student_id,
     ]);
-
     // issue certificate
     const student = await get(`SELECT username FROM users WHERE id=?`, [
       enr.student_id,
@@ -550,7 +730,6 @@ app.post('/faculty/complete-enrollment', async (req, res) => {
     res.json({ ok: false, error: 'completion failed' });
   }
 });
-
 /* =========================================================
  * SUBMISSIONS
  * =======================================================*/
@@ -571,7 +750,6 @@ app.post('/student/submission', upload.single('file'), async (req, res) => {
   io.emit('submissionUploaded', sub);
   res.json({ ok: true, submission: sub });
 });
-
 // Student: my submissions
 app.get('/student/submissions', async (req, res) => {
   const student_id = Number(req.query.student_id);
@@ -612,7 +790,6 @@ app.post('/faculty/review-submission', async (req, res) => {
   const marks = req.body.marks == null ? null : Number(req.body.marks);
   if (!faculty_id || !submission_id)
     return res.json({ ok: false, error: 'missing fields' });
-
   const sub = await get(
     `
     SELECT s.*, c.faculty_id
@@ -683,7 +860,6 @@ app.get('/certificate/:serial', async (req, res) => {
   );
   res.json({ ok: true, certificate: cert || null });
 });
-
 // Admin: certificates tied to my universities
 app.get('/admin/certificates', async (req, res) => {
   const admin_id = Number(req.query.admin_id);
@@ -823,7 +999,6 @@ app.get('/verify/:serial', async (req, res) => {
     res.send(`<h2>Error</h2>`);
   }
 });
-
 // Simple QR endpoint (demo)
 app.get('/generate-qr', async (req, res) => {
   const data = req.query.data || 'ABC';
@@ -835,9 +1010,6 @@ app.get('/generate-qr', async (req, res) => {
   }
 });
 
-/* =========================================================
- * CHATBOT (keyword based, optional)
- * =======================================================*/
 app.post('/chatbot', async (req, res) => {
   try {
     const { q, user_id } = req.body || {};
@@ -869,11 +1041,6 @@ app.post('/chatbot', async (req, res) => {
     return res.json({ ok: false, error: 'Bot error' });
   }
 });
-
-/* =========================================================
- * LEGACY ENDPOINTS (compat)
- * =======================================================*/
-
 app.get('/getAllUniversities', async (req, res) => {
   try {
     const rows = await all(`SELECT id,name FROM universities ORDER BY name COLLATE NOCASE`);
@@ -882,7 +1049,6 @@ app.get('/getAllUniversities', async (req, res) => {
     return res.json([]);
   }
 });
-
 app.post('/addUniversity', async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.json({ error: 'Name required' });
@@ -894,7 +1060,6 @@ app.post('/addUniversity', async (req, res) => {
     return res.json({ error: 'DB error: ' + e.message });
   }
 });
-
 app.get('/getCourses/:uniId', async (req, res) => {
   try {
     const uniId = Number(req.params.uniId);
@@ -904,7 +1069,6 @@ app.get('/getCourses/:uniId', async (req, res) => {
     res.json([]);
   }
 });
-
 app.post('/addCourse', async (req, res) => {
   try {
     const { university_id, code, title, credit_value } = req.body || {};
@@ -921,7 +1085,6 @@ app.post('/addCourse', async (req, res) => {
     return res.json({ error: 'DB error: ' + e.message });
   }
 });
-
 app.get('/admin/getAllEnrollments', async (req, res) => {
   const rows = await all(`SELECT * FROM enrollments ORDER BY requested_at DESC`);
   res.json(rows);
@@ -938,7 +1101,6 @@ app.get('/admin/getAllCertificates', async (req, res) => {
   );
   res.json(rows);
 });
-
 app.post('/admin/approveCertificate', async (req, res) => {
   const { id } = req.body || {};
   if (!id) return res.json({ error: 'id required' });
@@ -959,7 +1121,6 @@ app.post('/admin/approveCertificate', async (req, res) => {
     `UPDATE certificates SET status='validated', validated_at=CURRENT_TIMESTAMP WHERE id=?`,
     [cert.id]
   );
-
   io.emit('certificateApproved', { id: cert.id, serial: cert.serial });
   return res.json({ ok: true });
 });

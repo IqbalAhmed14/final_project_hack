@@ -9,6 +9,8 @@
 <body>
   <header><h2>Admin Dashboard <span id="adminName" class="muted"></span></h2></header>
   <main class="container">
+
+    <!-- UNIVERSITY SECTION -->
     <section class="card">
       <h3>Add University</h3>
       <div class="grid2">
@@ -19,10 +21,24 @@
       <ul id="universitiesList" class="list"></ul>
     </section>
 
+    <!-- PROGRAM SECTION -->
+    <section class="card">
+      <h3>Add Program</h3>
+      <div class="grid2">
+        <select id="programUniversity"></select>
+        <input id="programName" placeholder="Program Name (e.g. B.Tech, MBA)"/>
+        <button id="addProgramBtn" class="primary">Add</button>
+      </div>
+      <h4 style="margin-top:10px">Programs</h4>
+      <ul id="programsList" class="list"></ul>
+    </section>
+
+    <!-- COURSE SECTION -->
     <section class="card">
       <h3>Add Course</h3>
       <div class="grid2">
         <select id="courseUniversity"></select>
+        <select id="courseProgram"></select> <!-- program selector -->
         <input id="courseCode" placeholder="Course Code"/>
         <input id="courseTitle" placeholder="Course Title"/>
         <input id="courseCredits" type="number" placeholder="Credits"/>
@@ -30,23 +46,42 @@
         <input id="courseFacultyId" type="number" placeholder="Assign Faculty ID (optional)"/>
         <button id="addCourseBtn" class="primary">Add</button>
       </div>
+      <h4 style="margin-top:10px">Courses</h4>
       <ul id="coursesList" class="list"></ul>
     </section>
 
+    <!-- FEE SECTION -->
+    <section class="card">
+      <h3>Add Program Fees</h3>
+      <div class="grid2">
+        <select id="feeUniversity"></select>
+        <select id="feeProgram"></select>
+        <input id="feeType" placeholder="Fee Type (e.g. Tuition, Hostel)"/>
+        <input id="feeAmount" type="number" placeholder="Amount"/>
+        <button id="addFeeBtn" class="primary">Add Fee</button>
+      </div>
+      <h4 style="margin-top:10px">Program Fees</h4>
+      <ul id="feesList" class="list"></ul>
+    </section>
+
+    <!-- ENROLLMENTS SECTION -->
     <section class="card">
       <h3>Student Enrollments (All my universities)</h3>
       <ul id="adminEnrollments" class="list"></ul>
     </section>
 
+    <!-- SUBMISSIONS SECTION -->
     <section class="card">
       <h3>Submissions (All my universities)</h3>
       <ul id="adminSubmissions" class="list"></ul>
     </section>
 
+    <!-- CERTIFICATES SECTION -->
     <section class="card">
       <h3>Certificates (from my universities)</h3>
       <ul id="adminCertificates" class="list"></ul>
     </section>
+
   </main>
 
   <script src="/socket.io/socket.io.js"></script>

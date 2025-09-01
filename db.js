@@ -20,27 +20,39 @@ db.run(`
   )`);
 
 // Ensure faculty_code exists (add if missing)
-db.all(`PRAGMA table_info(users)`, (err, cols) => {
+// Ensure faculty_code exists (add if missing)
+db.get(`PRAGMA table_info(users)`, (err, cols) => {
   if (err) {
     console.error('PRAGMA table_info(users) error:', err.message);
     return;
   }
-  const hasFacultyCode = cols.some(c => c.name === 'faculty_code');
-  if (!hasFacultyCode) {
-    db.run(`ALTER TABLE users ADD COLUMN faculty_code TEXT`, (e) => {
-      if (e) console.error('ALTER TABLE add faculty_code failed:', e.message);
-      else console.log('✅ Added faculty_code column to users');
-    });
-  }
+  
+  // Check if faculty_code column exists
+  db.all(`PRAGMA table_info(users)`, (err, columns) => {
+    if (err) {
+      console.error('Error checking users table structure:', err.message);
+      return;
+    }
+    
+    const hasFacultyCode = columns.some(col => col.name === 'faculty_code');
+    if (!hasFacultyCode) {
+      db.run(`ALTER TABLE users ADD COLUMN faculty_code TEXT`, (err) => {
+        if (err) {
+          console.error('ALTER TABLE add faculty_code failed:', err.message);
+        } else {
+          console.log('✅ Added faculty_code column to users');
+        }
+      });
+    }
+  });
 });
-
 
 
   // UNIVERSITIES
   db.run(`
     CREATE TABLE IF NOT EXISTS universities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
+      name TEXT  UNIQUE,
       admin_id INTEGER,
       FOREIGN KEY(admin_id) REFERENCES users(id) ON DELETE SET NULL
     )`);
@@ -134,6 +146,48 @@ db.all(`PRAGMA table_info(users)`, (err, cols) => {
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(certificate_id) REFERENCES certificates(id) ON DELETE CASCADE
     )`);
+      // PROGRAMS
+  db.run(`
+    CREATE TABLE IF NOT EXISTS programs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      university_id INTEGER NOT NULL,
+      description TEXT,
+      UNIQUE(name, university_id),
+      FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
+    )`);
+
+  // FEES
+  db.run(`
+    CREATE TABLE IF NOT EXISTS fees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      program_id INTEGER NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('tuition','hostel','exam','other')),
+      amount REAL NOT NULL,
+      FOREIGN KEY(program_id) REFERENCES programs(id) ON DELETE CASCADE
+    )`);
+
+  // Update COURSES to belong to a PROGRAM instead of directly to UNIVERSITY
+  // Update COURSES to belong to a PROGRAM instead of directly to UNIVERSITY
+db.all(`PRAGMA table_info(courses)`, (err, columns) => {
+  if (err) {
+    console.error("PRAGMA table_info(courses) error:", err.message);
+    return;
+  }
+  
+  const hasProgramId = columns.some(col => col.name === "program_id");
+  if (!hasProgramId) {
+    db.run(`ALTER TABLE courses ADD COLUMN program_id INTEGER REFERENCES programs(id)`, (err) => {
+      if (err) {
+        console.error('ALTER TABLE add program_id failed:', err.message);
+      } else {
+        console.log('✅ Added program_id column to courses');
+      }
+    });
+  }
+});
+
+
 
   // Helpful Indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
@@ -152,5 +206,3 @@ db.all("SELECT name FROM sqlite_master WHERE type='table'", [], (err, rows) => {
 
 module.exports = db;
 
-
-module.exports = db;
