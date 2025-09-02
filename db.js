@@ -15,41 +15,16 @@ db.serialize(() => {
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('admin','faculty','student')),
-      credits INTEGER NOT NULL DEFAULT 0
+      credits INTEGER NOT NULL DEFAULT 0,
+      faculty_code TEXT,
+      cgpa REAL DEFAULT 0.0
     )`);
-
-  // Ensure faculty_code exists (add if missing)
-  db.get(`PRAGMA table_info(users)`, (err, cols) => {
-    if (err) {
-      console.error('PRAGMA table_info(users) error:', err.message);
-      return;
-    }
-    
-    // Check if faculty_code column exists
-    db.all(`PRAGMA table_info(users)`, (err, columns) => {
-      if (err) {
-        console.error('Error checking users table structure:', err.message);
-        return;
-      }
-      
-      const hasFacultyCode = columns.some(col => col.name === 'faculty_code');
-      if (!hasFacultyCode) {
-        db.run(`ALTER TABLE users ADD COLUMN faculty_code TEXT`, (err) => {
-          if (err) {
-            console.error('ALTER TABLE add faculty_code failed:', err.message);
-          } else {
-            console.log('✅ Added faculty_code column to users');
-          }
-        });
-      }
-    });
-  });
 
   // UNIVERSITIES
   db.run(`
     CREATE TABLE IF NOT EXISTS universities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT  UNIQUE,
+      name TEXT UNIQUE,
       admin_id INTEGER,
       FOREIGN KEY(admin_id) REFERENCES users(id) ON DELETE SET NULL
     )`);
@@ -64,7 +39,18 @@ db.serialize(() => {
       FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
     )`);
 
-  // COURSES
+  // PROGRAMS (MUST BE CREATED BEFORE COURSES)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS programs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      university_id INTEGER NOT NULL,
+      description TEXT,
+      UNIQUE(name, university_id),
+      FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
+    )`);
+
+  // COURSES (with program_id included from the start)
   db.run(`
     CREATE TABLE IF NOT EXISTS courses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,11 +58,13 @@ db.serialize(() => {
       title TEXT NOT NULL,
       credit_value INTEGER NOT NULL,
       university_id INTEGER NOT NULL,
+      program_id INTEGER,
       faculty_id INTEGER,
       notes_filename TEXT,
       notes_url TEXT,
       UNIQUE(code, university_id),
       FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE,
+      FOREIGN KEY(program_id) REFERENCES programs(id) ON DELETE SET NULL,
       FOREIGN KEY(faculty_id) REFERENCES users(id) ON DELETE SET NULL
     )`);
 
@@ -89,6 +77,7 @@ db.serialize(() => {
       status TEXT NOT NULL DEFAULT 'enrolled',
       requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       approved_at DATETIME,
+      marks INTEGER,
       UNIQUE(student_id, course_id),
       FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
@@ -143,17 +132,6 @@ db.serialize(() => {
       FOREIGN KEY(certificate_id) REFERENCES certificates(id) ON DELETE CASCADE
     )`);
 
-  // PROGRAMS
-  db.run(`
-    CREATE TABLE IF NOT EXISTS programs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      university_id INTEGER NOT NULL,
-      description TEXT,
-      UNIQUE(name, university_id),
-      FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
-    )`);
-
   // FEES
   db.run(`
     CREATE TABLE IF NOT EXISTS fees (
@@ -164,42 +142,7 @@ db.serialize(() => {
       FOREIGN KEY(program_id) REFERENCES programs(id) ON DELETE CASCADE
     )`);
 
-  // Update COURSES to belong to a PROGRAM instead of directly to UNIVERSITY
-  db.all(`PRAGMA table_info(courses)`, (err, columns) => {
-    if (err) {
-      console.error("PRAGMA table_info(courses) error:", err.message);
-      return;
-    }
-    
-    const hasProgramId = columns.some(col => col.name === "program_id");
-    if (!hasProgramId) {
-      db.run(`ALTER TABLE courses ADD COLUMN program_id INTEGER REFERENCES programs(id)`, (err) => {
-        if (err) {
-          console.error('ALTER TABLE add program_id failed:', err.message);
-        } else {
-          console.log('✅ Added program_id column to courses');
-          // After adding column, create index
-          db.run(`CREATE INDEX IF NOT EXISTS idx_courses_program ON courses(program_id)`);
-        }
-      });
-    } else {
-      console.log('✅ program_id column already exists in courses');
-    }
-  });
-
-  // Helpful Indexes
-  db.run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_courses_uni ON courses(university_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_certificates_student ON certificates(student_id)`);
-
-  // =======================
-  // ADMISSIONS SYSTEM TABLES
-  // =======================
-  
-  // Admissions table
+  // ADMISSIONS
   db.run(`
     CREATE TABLE IF NOT EXISTS admissions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -218,14 +161,9 @@ db.serialize(() => {
       FOREIGN KEY(program_id) REFERENCES programs(id) ON DELETE CASCADE,
       FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE,
       FOREIGN KEY(reviewed_by) REFERENCES users(id) ON DELETE SET NULL
-    )
-  `);
+    )`);
 
-  // =======================
-  // HOSTEL MANAGEMENT TABLES
-  // =======================
-  
-  // Hostels table
+  // HOSTELS
   db.run(`
     CREATE TABLE IF NOT EXISTS hostels (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,10 +174,9 @@ db.serialize(() => {
       fees_per_semester REAL NOT NULL,
       amenities TEXT,
       FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
-    )
-  `);
+    )`);
 
-  // Hostel allocations table
+  // HOSTEL ALLOCATIONS
   db.run(`
     CREATE TABLE IF NOT EXISTS hostel_allocations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -253,21 +190,9 @@ db.serialize(() => {
       FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY(hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,
       UNIQUE(hostel_id, room_number, academic_year, semester)
-    )
-  `);
+    )`);
 
-  // =======================
-  // INDEXES FOR NEW TABLES
-  // =======================
-  
-  db.run(`CREATE INDEX IF NOT EXISTS idx_admissions_status ON admissions(status)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_admissions_student ON admissions(student_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_hostels_university ON hostels(university_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_hostel_allocations_student ON hostel_allocations(student_id)`);
-
-  // =======================
-  // FEE MANAGEMENT TABLES
-  // =======================
+  // FEE PAYMENTS
   db.run(`
     CREATE TABLE IF NOT EXISTS fee_payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,16 +204,9 @@ db.serialize(() => {
       receipt_number TEXT UNIQUE NOT NULL,
       status TEXT DEFAULT 'completed',
       FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `);
+    )`);
 
-  // Index for faster queries
-  db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_student ON fee_payments(student_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_receipt ON fee_payments(receipt_number)`);
-
-  // =======================
-  // ATTENDANCE TABLE
-  // =======================
+  // ATTENDANCE
   db.run(`
     CREATE TABLE IF NOT EXISTS attendance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -300,57 +218,27 @@ db.serialize(() => {
       FOREIGN KEY (enrollment_id) REFERENCES enrollments(id) ON DELETE CASCADE,
       FOREIGN KEY (marked_by) REFERENCES users(id) ON DELETE SET NULL,
       UNIQUE(enrollment_id, date)
-    )
-  `);
+    )`);
 
-  // Index for faster attendance queries
+  // =======================
+  // INDEXES
+  // =======================
+  db.run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_courses_uni ON courses(university_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_courses_program ON courses(program_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_certificates_student ON certificates(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_admissions_status ON admissions(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_admissions_student ON admissions(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_hostels_university ON hostels(university_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_hostel_allocations_student ON hostel_allocations(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_student ON fee_payments(student_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_receipt ON fee_payments(receipt_number)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_enrollment ON attendance(enrollment_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)`);
-
-  // =======================
-  // ADD MISSING COLUMNS (MOVED TO THE END - THIS IS CRITICAL!)
-  // =======================
-
-  // Add marks column to enrollments if it doesn't exist
-  db.all(`PRAGMA table_info(enrollments)`, (err, columns) => {
-    if (err) {
-      console.error("PRAGMA table_info(enrollments) error:", err.message);
-      return;
-    }
-    
-    const hasMarks = columns.some(col => col.name === "marks");
-    if (!hasMarks) {
-      db.run(`ALTER TABLE enrollments ADD COLUMN marks INTEGER`, (err) => {
-        if (err) {
-          console.error('ALTER TABLE add marks failed:', err.message);
-        } else {
-          console.log('✅ Added marks column to enrollments');
-        }
-      });
-    }
-  });
-
-  // Add CGPA column to users table if it doesn't exist
-  db.all(`PRAGMA table_info(users)`, (err, columns) => {
-    if (err) {
-      console.error('PRAGMA table_info error:', err.message);
-      return;
-    }
-    
-    if (!columns || !Array.isArray(columns)) {
-      console.error('No columns data received');
-      return;
-    }
-    
-    const hasCGPA = columns.some(col => col.name === 'cgpa');
-    if (!hasCGPA) {
-      db.run(`ALTER TABLE users ADD COLUMN cgpa REAL DEFAULT 0.0`, (err) => {
-        if (err) console.error('ALTER TABLE add cgpa failed:', err.message);
-        else console.log('✅ Added cgpa column to users');
-      });
-    }
-  });
-});  // ← End of db.serialize()
+});
 
 // Debug: show created tables
 db.all("SELECT name FROM sqlite_master WHERE type='table'", [], (err, rows) => {

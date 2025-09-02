@@ -171,23 +171,23 @@ app.post('/login', async (req, res) => {
 });
 
 // Add University
+// Add University - FIXED VERSION
+// Add University - FIXED VERSION
 app.post('/admin/university', async (req, res) => {
   try {
-    let admin_id = null;
-    const name = (req.body.name || '').trim();
+    const { admin_id, name } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ error: "University name required" });
+    if (admin_id === undefined || !name) {
+      return res.status(400).json({ ok: false, error: "Admin ID and university name required" });
     }
 
-    // If admin_id passed in request → validate role
-    if (req.body.admin_id) {
-      const maybeId = Number(req.body.admin_id);
-      const u = await get(`SELECT id, role FROM users WHERE id=?`, [maybeId]);
-      if (!u || u.role !== 'admin') {
+    // ✅ Special case: fixed admin (id=0)
+    if (Number(admin_id) !== 0) {
+      // Validate against DB
+      const adminUser = await get(`SELECT id, role FROM users WHERE id=?`, [admin_id]);
+      if (!adminUser || adminUser.role !== 'admin') {
         return res.json({ ok: false, error: 'Not an admin' });
       }
-      admin_id = maybeId;
     }
 
     // Prevent duplicates
@@ -196,14 +196,14 @@ app.post('/admin/university', async (req, res) => {
       return res.json({ ok: false, error: 'University already exists' });
     }
 
-    // Insert (admin_id will be NULL if none given)
-    const r = await run(
-      `INSERT INTO universities(name, admin_id) VALUES(?, ?)`,
-      [name, admin_id]
-    );
+    // Insert university (admin_id can be 0 for fixed admin)
+    const actualAdminId = (Number(admin_id) === 0 ? null : admin_id);
+const r = await run(
+  `INSERT INTO universities(name, admin_id) VALUES(?, ?)`,
+  [name, actualAdminId]
+);
 
-    io.emit('universityAdded', { id: r.lastID, name });
-
+    io.emit('universityAdded', { id: r.lastID, name, admin_id });
     return res.json({ ok: true, id: r.lastID });
   } catch (e) {
     console.error('Add university error:', e.message);
@@ -513,9 +513,9 @@ app.get('/admin/admissions', async (req, res) => {
   try {
     const admin_id = Number(req.query.admin_id);
     
-    if (!admin_id) {
-      return res.status(400).json({ ok: false, error: "admin_id parameter is required" });
-    }
+   if (admin_id === null || admin_id === undefined || isNaN(admin_id)) {
+  return res.status(400).json({ ok: false, error: "admin_id parameter is required" });
+}
 
     const rows = await all(`
       SELECT a.*, p.name as program_name, u.name as university_name, us.username as student_username
@@ -753,8 +753,7 @@ app.get('/fees/student/:student_id', async (req, res) => {
  * COURSES
  * =======================================================*/
 
-// ===== Admin creates course in their university =====
-// ===== Admin creates course in their university =====
+
 // ===== Admin creates course in their university =====
 app.post('/admin/course', upload.single('notes'), async (req, res) => {
   try {
@@ -766,15 +765,17 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     const faculty_id = req.body.faculty_id ? Number(req.body.faculty_id) : null;
     const program_id = req.body.program_id ? Number(req.body.program_id) : null; // ← Extract program_id here
 
-    if (!admin_id || !university_id || !code || !title || !credit_value) {
-      return res.json({ ok: false, error: 'Missing fields' });
-    }
+    if ((admin_id === null || admin_id === undefined || isNaN(admin_id))
+    || !university_id || !code || !title || !credit_value) {
+  return res.json({ ok: false, error: 'Missing fields' });
+}
+
 
     // Verify university belongs to this admin
-    const uni = await get(
-      `SELECT * FROM universities WHERE id=? AND admin_id=?`,
-      [university_id, admin_id]
-    );
+   const uni = await get(
+  `SELECT * FROM universities WHERE id=? AND (admin_id=? OR admin_id IS NULL)`,
+  [university_id, admin_id]
+);
     if (!uni) {
       return res.json({ ok: false, error: 'Not your university' });
     }
@@ -1575,6 +1576,8 @@ io.on('connection', (socket) => {
   console.log('🔌 connected', socket.id);
   socket.on('disconnect', () => console.log('❌ disconnected', socket.id));
 });
+// Add this after your other middleware but before routes
+app.use('/socket.io', express.static(path.join(__dirname, 'node_modules/socket.io/client-dist')));
 
 /* =========================================================
  * SERVER START

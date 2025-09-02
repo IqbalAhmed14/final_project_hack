@@ -1,4 +1,5 @@
 // public/js/script.js
+
 (function(){
   const user = JSON.parse(localStorage.getItem('user') || 'null');
   const socket = window.io ? io() : null;
@@ -10,6 +11,7 @@
   }
   const $ = (id)=> document.getElementById(id);
   const api = (url, opts={}) => fetch(url, opts).then(r=>r.json());
+  
 
   /* ---------------- Student Page ---------------- */
   if($('studName')){
@@ -470,8 +472,8 @@ const programName = $('programName');
 const programList = $('programsList');
 
 const feeUniSelect = $('feeUniversity');
-const feeProgramSelect = $('feeProgram');  // ✅ new
-const feeTypeInput = $('feeType');         // ✅ new
+const feeProgramSelect = $('feeProgram');  // ✅ ADD THIS LINE
+const feeTypeInput = $('feeType');         // ✅ ADD THIS LINE  
 const feeAmount = $('feeAmount');
 const feeList = $('feesList');
 
@@ -491,19 +493,24 @@ const allocationsList = $('hostelAllocationsList');
 
   // Add University
  // Add University
-$('addUniversityBtn').onclick = async () => {
-  const name = uniName.value.trim();
-  if (!name) return alert('Enter university name!');
-  const r = await api('/admin/university', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ admin_id: user.id, name })
-  });
-  if (!r.ok) return alert(r.error || 'Failed');
-  uniName.value = '';
-  alert('University added.');
-  loadAdminUniversities(); // refresh list
-};
+if ($('addUniversityBtn')) {
+  $('addUniversityBtn').onclick = async () => {
+    const name = uniName.value.trim();
+    if (!name) return alert('Enter university name!');
+    
+    const r = await api('/admin/university', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_id: user.id, name })
+    });
+
+    if (!r.ok) return alert(r.error || 'Failed');
+    uniName.value = '';
+    alert('University added.');
+    loadAdminUniversities();
+  };
+}
+
 // Add Program
 // === Add Program ===
 // === Add Program === FIXED
@@ -535,35 +542,114 @@ document.getElementById("addProgramBtn").onclick = async () => {
     alert("❌ Network error adding program");
   }
 };
+// Add Course
+if ($('addCourseBtn')) {
+  $('addCourseBtn').onclick = async () => {
+    const code = $('courseCode').value.trim();
+    const title = $('courseTitle').value.trim();
+    const credit_value = Number($('courseCredits').value);
+    const university_id = Number(uniSelect.value);
+    const program_id = Number($('courseProgram').value) || null;
+    const faculty_id = Number($('courseFacultyId').value) || null;
+    const file = $('courseNotes').files[0];
+
+    // DEBUG: Check what values are being captured
+    console.log('Course Form Values:', {
+      code, title, credit_value, university_id, program_id, faculty_id, file
+    });
+
+    // ✅ Frontend validation
+    if (!code || !title || !credit_value || !university_id) {
+      console.log('Validation Failed - Missing fields detected');
+      return alert('Please fill all required fields: Code, Title, Credits, and University!');
+    }
+
+    try {
+      const fd = new FormData();
+      fd.append('admin_id', String(user.id));   // ✅ required
+      fd.append('university_id', String(university_id));
+      fd.append('code', code);
+      fd.append('title', title);
+      fd.append('credit_value', String(credit_value));
+
+      // ✅ Always send program_id (even if blank)
+      if (program_id) {
+        fd.append('program_id', String(program_id));
+      } else {
+        fd.append('program_id', '');
+      }
+
+      if (faculty_id) fd.append('faculty_id', String(faculty_id));
+      if (file) fd.append('notes', file);
+
+      const r = await fetch('/admin/course', { method: 'POST', body: fd });
+      const d = await r.json();
+
+      if (!d.ok) {
+        return alert('Error: ' + (d.error || 'Failed to add course'));
+      }
+
+      alert('✅ Course added successfully!');
+
+      // Clear form fields
+      $('courseCode').value = '';
+      $('courseTitle').value = '';
+      $('courseCredits').value = '';
+      $('courseFacultyId').value = '';
+      $('courseNotes').value = '';
+
+      loadCourses(university_id);
+    } catch (error) {
+      console.error('Add course error:', error);
+      alert('Network error adding course. Please try again.');
+    }
+  };
+}
+
 // Add Fee
 // Add Fee - FIXED
 $('addFeeBtn').onclick = async () => {
   const university_id = Number(feeUniSelect.value);
-  const program_id = Number(feeProgramSelect.value);
+  const program_id = Number(feeProgramSelect.value); // Make sure this exists
   const type = feeTypeInput.value.trim();
   const amount = Number(feeAmount.value);
 
-  if (!university_id || !program_id || !type || !amount) return alert('Fill all fields!');
+  if (!university_id || !program_id || !type || !amount) {
+    console.log('Fee Validation Failed - Missing fields');
+    return alert('Please select University, Program, and enter Fee Type and Amount!');
+  }
+
+  if (amount <= 0) {
+    return alert('Fee amount must be greater than 0!');
+  }
 
   try {
     const r = await api('/admin/fee', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ admin_id: user.id, university_id, program_id, type, amount })
+      body: JSON.stringify({ 
+        admin_id: user.id, 
+        university_id, 
+        program_id, 
+        type, 
+        amount 
+      })
     });
     
     if (!r.ok) {
-      alert(r.error || 'Failed to add fee');
-      return;
+      return alert('Error: ' + (r.error || 'Failed to add fee'));
     }
     
+    alert('✅ Fee added successfully!');
+    
+    // Clear form fields
     feeAmount.value = '';
     feeTypeInput.value = '';
-    alert('Fee added successfully!');
+    
     loadFees(university_id);
   } catch (error) {
     console.error('Add fee error:', error);
-    alert('Network error adding fee');
+    alert('Network error adding fee. Please try again.');
   }
 };
 
@@ -602,6 +688,35 @@ async function loadPrograms(university_id) {
   } catch (error) {
     console.error('Error loading programs:', error);
     if (programList) programList.innerHTML = '<li class="muted">Error loading programs</li>';
+  }
+}
+async function loadCourses(university_id) {
+  try {
+    const d = await api(`/courses/by-university?university_id=${university_id}`);
+    coursesList.innerHTML = '';
+
+    if (!d.ok) {
+      coursesList.innerHTML = `<li><span class="muted">Error: ${d.error || 'Failed to load courses'}</span></li>`;
+      return;
+    }
+
+    (d.courses || []).forEach(c => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div>
+          <div><b>${c.code}</b> — ${c.title} (${c.credit_value} credits)</div>
+          <div class="muted">Program ID: ${c.program_id || 'Not assigned'} | Faculty: ${c.faculty_name || '—'} | Faculty Code: ${c.faculty_code || '—'}</div>
+          ${c.notes_url ? `<a href="${c.notes_url}" target="_blank">📎 Download Notes</a>` : ''}
+        </div>`;
+      coursesList.appendChild(li);
+    });
+
+    if ((d.courses || []).length === 0) {
+      coursesList.innerHTML = '<li><span class="muted">No courses found for this university.</span></li>';
+    }
+  } catch (error) {
+    console.error('Error loading courses:', error);
+    coursesList.innerHTML = '<li><span class="muted">Error loading courses. Please refresh.</span></li>';
   }
 }
 async function loadFees(university_id) {
@@ -794,14 +909,19 @@ if ((d.universities || []).length > 0) {
 
 
 
-    $('joinUniversityBtn').onclick = async ()=>{
-      const university_id = Number(allUnis.value);
-      if(!university_id) return;
-      const r = await api('/student/join-university',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ student_id:user.id, university_id })});
-      if(!r.ok) return alert(r.error||'Join failed');
-      loadMyUniversities();
-    };
-    
+   // Replace this problematic section around line 918:
+// $('joinUniversityBtn').onclick = async ()=>{ ... };
+
+// With this safer approach:
+if ($('joinUniversityBtn')) {
+  $('joinUniversityBtn').onclick = async ()=>{
+    const university_id = Number(allUnis.value);
+    if(!university_id) return;
+    const r = await api('/student/join-university',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ student_id:user.id, university_id })});
+    if(!r.ok) return alert(r.error||'Join failed');
+    loadMyUniversities();
+  };
+}
     // =======================
     // ADMISSIONS EVENT LISTENERS
     // =======================
@@ -809,65 +929,7 @@ if ((d.universities || []).length > 0) {
     applyAdmissionBtn.onclick = applyForAdmission;
 
     $('studentRefreshBtn').onclick = ()=>{ loadAllUniversities(); loadMyUniversities(); };
-  // Add Course
-  $('addCourseBtn').onclick = async () => {
-    const code = $('courseCode').value.trim();
-    const title = $('courseTitle').value.trim();
-    const credit_value = Number($('courseCredits').value);
-    const university_id = Number(uniSelect.value);
-    const program_id = Number($('courseProgram').value) || null;
-    const faculty_id = Number($('courseFacultyId').value) || '';
-    const file = $('courseNotes').files[0];
-
-    if (!code || !title || !credit_value || !university_id) return alert('Fill all fields!');
-
-
-    const fd = new FormData();
-    fd.append('admin_id', String(user.id));
-    fd.append('university_id', String(university_id));
-    fd.append('code', code);
-    fd.append('title', title);
-    fd.append('credit_value', String(credit_value));
-    if (faculty_id) fd.append('faculty_id', String(faculty_id));
-    if (program_id) fd.append('program_id', String(program_id));
-    if (file) fd.append('notes', file);
-
-    const r = await fetch('/admin/course', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (!d.ok) return alert(d.error || 'Failed');
-    alert('Course added.');
-    loadCourses(university_id);
-  };
-
-  // Load Courses
-async function loadCourses(university_id) {
-  // ✅ FIXED: Use correct endpoint - your server doesn't have by-program endpoint
-  const d = await api(`/courses/by-university?university_id=${university_id}`);
-  
-  coursesList.innerHTML = '';
-
-   
-
-    if (!d.ok) {
-      coursesList.innerHTML = `<li><span class="muted">Error: ${d.error || 'Failed to load courses'}</span></li>`;
-      return;
-    }
-
-    (d.courses || []).forEach(c => {
-      const li = document.createElement('li');
-      li.innerHTML = `
-        <div>
-          <div><b>${c.code}</b> — ${c.title} (${c.credit_value} cr)</div>
-          <div class="muted">Faculty: ${c.faculty_name || '—'}</div>
-          ${c.notes_url ? `<a href="${c.notes_url}" target="_blank">Notes</a>` : ''}
-        </div>`;
-      coursesList.appendChild(li);
-    });
-
-    if ((d.courses || []).length === 0) {
-      coursesList.innerHTML = '<li><span class="muted">No courses yet for this university.</span></li>';
-    }
-  }
+ 
 
   // 🚀 Load when page opens
 
