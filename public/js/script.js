@@ -158,15 +158,12 @@ const paymentHistory = $('paymentHistory');
         myUnis.appendChild(li);
       });
     }
-    async function loadCourses(){
+   async function loadCourses(){
   const uid = Number(browseUni.value);
-  const pid = Number($('browseProgramSelect')?.value); // 👈 new program select
-
   if(!uid){ coursesList.innerHTML=''; return; }
-const url = pid 
-  ? `/courses/by-program?university_id=${uid}&program_id=${pid}`
-  : `/courses/by-university?university_id=${uid}`;
-const d = await api(url);
+  
+  // ✅ FIXED: Use correct endpoint
+  const d = await api(`/courses/by-university?university_id=${uid}`);
 
  
 
@@ -573,27 +570,38 @@ $('addFeeBtn').onclick = async () => {
 async function loadPrograms(university_id) {
   try {
     const d = await api(`/programs/by-university?university_id=${university_id}`);
-    programList.innerHTML = '';
-    $('courseProgram').innerHTML = '';   // reset select
-    feeProgramSelect.innerHTML = '';     // reset select
+    if (programList) programList.innerHTML = '';
+    
+    // ✅ FIXED: Check if elements exist before using them
+    if ($('courseProgram')) $('courseProgram').innerHTML = '<option value="">Select Program</option>';
+    if (feeProgramSelect) feeProgramSelect.innerHTML = '<option value="">Select Program</option>';
 
     (d.programs || []).forEach(p => {
-      const li = document.createElement('li');
-      li.textContent = `${p.id}: ${p.name}`;
-      programList.appendChild(li);
+      if (programList) {
+        const li = document.createElement('li');
+        li.textContent = `${p.id}: ${p.name}`;
+        programList.appendChild(li);
+      }
 
-      // also add to selects
-      const opt1 = document.createElement('option');
-      opt1.value = p.id; 
-      opt1.textContent = p.name;
-      $('courseProgram').appendChild(opt1);
+      // Add to course program select (if element exists)
+      if ($('courseProgram')) {
+        const opt1 = document.createElement('option');
+        opt1.value = p.id; 
+        opt1.textContent = p.name;
+        $('courseProgram').appendChild(opt1);
+      }
 
-      const opt2 = opt1.cloneNode(true);
-      feeProgramSelect.appendChild(opt2);
+      // Add to fee program select (if element exists)
+      if (feeProgramSelect) {
+        const opt2 = document.createElement('option');
+        opt2.value = p.id;
+        opt2.textContent = p.name;
+        feeProgramSelect.appendChild(opt2);
+      }
     });
   } catch (error) {
     console.error('Error loading programs:', error);
-    programList.innerHTML = '<li class="muted">Error loading programs</li>';
+    if (programList) programList.innerHTML = '<li class="muted">Error loading programs</li>';
   }
 }
 async function loadFees(university_id) {
@@ -614,6 +622,33 @@ async function loadFees(university_id) {
     console.error('Error loading fees:', error);
     feeList.innerHTML = '<li class="muted">Error loading fees</li>';
   }
+}
+// ✅ ADD THESE EVENT LISTENERS (CRITICAL!)
+if (feeUniSelect) {
+  feeUniSelect.onchange = () => {
+    const uniId = feeUniSelect.value;
+    if (uniId) {
+      loadPrograms(uniId);
+      loadFees(uniId);
+    }
+  };
+}
+
+if (uniSelect) {
+  uniSelect.onchange = () => {
+    const uniId = uniSelect.value;
+    if (uniId) {
+      loadPrograms(uniId);
+      loadCourses(uniId);
+    }
+  };
+}
+
+// Add this if you have a courseProgram dropdown
+if ($('courseProgram')) {
+  $('courseProgram').onchange = () => {
+    loadCourses(uniSelect.value);
+  };
 }
 // =======================
 // ADMISSIONS FUNCTIONS
@@ -740,12 +775,14 @@ async function loadAdminUniversities() {
 
 if ((d.universities || []).length > 0) {
   const firstUniId = uniSelect.value;
-  loadCourses(firstUniId);
-  loadPrograms(firstUniId);   // 👈 add
-  loadFees(firstUniId);       // 👈 add
-  loadAdmissions();           // 👈 Load admissions
-  loadHostels();              // 👈 Load hostels
-} else {
+  if (firstUniId) {
+    loadCourses(firstUniId);
+    loadPrograms(firstUniId);
+    loadFees(firstUniId);
+    loadAdmissions();
+    loadHostels();
+  }
+}else {
   coursesList.innerHTML = '<li><span class="muted">Create a university to add courses.</span></li>';
 }
 
@@ -754,18 +791,7 @@ if ((d.universities || []).length > 0) {
   loadCertificates();
 }
 
-feeUniSelect.onchange = () => {
-  loadPrograms(feeUniSelect.value); // fill feeProgram select
-  loadFees(feeUniSelect.value);
-};
 
-uniSelect.onchange = () => {
-  loadPrograms(uniSelect.value);    // fill courseProgram select
-  loadCourses(uniSelect.value);
-};
-$('courseProgram').onchange = () => loadCourses(uniSelect.value);
-// Hostel university change listener
-hostelUniSelect.onchange = loadHostels;
 
 
     $('joinUniversityBtn').onclick = async ()=>{
@@ -815,14 +841,12 @@ hostelUniSelect.onchange = loadHostels;
 
   // Load Courses
 async function loadCourses(university_id) {
-  const pid = Number($('courseProgram')?.value) || null;
-  const url = pid 
-    ? `/courses/by-program?university_id=${university_id}&program_id=${pid}`
-    : `/courses/by-university?university_id=${university_id}`;
+  // ✅ FIXED: Use correct endpoint - your server doesn't have by-program endpoint
+  const d = await api(`/courses/by-university?university_id=${university_id}`);
+  
+  coursesList.innerHTML = '';
 
-  const d = await api(url);
-
-    coursesList.innerHTML = '';
+   
 
     if (!d.ok) {
       coursesList.innerHTML = `<li><span class="muted">Error: ${d.error || 'Failed to load courses'}</span></li>`;

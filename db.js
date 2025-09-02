@@ -9,44 +9,41 @@ db.serialize(() => {
   db.run(`PRAGMA foreign_keys = ON`);
 
   // USERS
- // USERS
-db.run(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','faculty','student')),
-    credits INTEGER NOT NULL DEFAULT 0
-  )`);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin','faculty','student')),
+      credits INTEGER NOT NULL DEFAULT 0
+    )`);
 
-// Ensure faculty_code exists (add if missing)
-// Ensure faculty_code exists (add if missing)
-db.get(`PRAGMA table_info(users)`, (err, cols) => {
-  if (err) {
-    console.error('PRAGMA table_info(users) error:', err.message);
-    return;
-  }
-  
-  // Check if faculty_code column exists
-  db.all(`PRAGMA table_info(users)`, (err, columns) => {
+  // Ensure faculty_code exists (add if missing)
+  db.get(`PRAGMA table_info(users)`, (err, cols) => {
     if (err) {
-      console.error('Error checking users table structure:', err.message);
+      console.error('PRAGMA table_info(users) error:', err.message);
       return;
     }
     
-    const hasFacultyCode = columns.some(col => col.name === 'faculty_code');
-    if (!hasFacultyCode) {
-      db.run(`ALTER TABLE users ADD COLUMN faculty_code TEXT`, (err) => {
-        if (err) {
-          console.error('ALTER TABLE add faculty_code failed:', err.message);
-        } else {
-          console.log('✅ Added faculty_code column to users');
-        }
-      });
-    }
+    // Check if faculty_code column exists
+    db.all(`PRAGMA table_info(users)`, (err, columns) => {
+      if (err) {
+        console.error('Error checking users table structure:', err.message);
+        return;
+      }
+      
+      const hasFacultyCode = columns.some(col => col.name === 'faculty_code');
+      if (!hasFacultyCode) {
+        db.run(`ALTER TABLE users ADD COLUMN faculty_code TEXT`, (err) => {
+          if (err) {
+            console.error('ALTER TABLE add faculty_code failed:', err.message);
+          } else {
+            console.log('✅ Added faculty_code column to users');
+          }
+        });
+      }
+    });
   });
-});
-
 
   // UNIVERSITIES
   db.run(`
@@ -66,7 +63,6 @@ db.get(`PRAGMA table_info(users)`, (err, cols) => {
       FOREIGN KEY(student_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY(university_id) REFERENCES universities(id) ON DELETE CASCADE
     )`);
-
 
   // COURSES
   db.run(`
@@ -146,7 +142,8 @@ db.get(`PRAGMA table_info(users)`, (err, cols) => {
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(certificate_id) REFERENCES certificates(id) ON DELETE CASCADE
     )`);
-      // PROGRAMS
+
+  // PROGRAMS
   db.run(`
     CREATE TABLE IF NOT EXISTS programs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,26 +165,27 @@ db.get(`PRAGMA table_info(users)`, (err, cols) => {
     )`);
 
   // Update COURSES to belong to a PROGRAM instead of directly to UNIVERSITY
-  // Update COURSES to belong to a PROGRAM instead of directly to UNIVERSITY
-db.all(`PRAGMA table_info(courses)`, (err, columns) => {
-  if (err) {
-    console.error("PRAGMA table_info(courses) error:", err.message);
-    return;
-  }
-  
-  const hasProgramId = columns.some(col => col.name === "program_id");
-  if (!hasProgramId) {
-    db.run(`ALTER TABLE courses ADD COLUMN program_id INTEGER REFERENCES programs(id)`, (err) => {
-      if (err) {
-        console.error('ALTER TABLE add program_id failed:', err.message);
-      } else {
-        console.log('✅ Added program_id column to courses');
-      }
-    });
-  }
-});
-
-
+  db.all(`PRAGMA table_info(courses)`, (err, columns) => {
+    if (err) {
+      console.error("PRAGMA table_info(courses) error:", err.message);
+      return;
+    }
+    
+    const hasProgramId = columns.some(col => col.name === "program_id");
+    if (!hasProgramId) {
+      db.run(`ALTER TABLE courses ADD COLUMN program_id INTEGER REFERENCES programs(id)`, (err) => {
+        if (err) {
+          console.error('ALTER TABLE add program_id failed:', err.message);
+        } else {
+          console.log('✅ Added program_id column to courses');
+          // After adding column, create index
+          db.run(`CREATE INDEX IF NOT EXISTS idx_courses_program ON courses(program_id)`);
+        }
+      });
+    } else {
+      console.log('✅ program_id column already exists in courses');
+    }
+  });
 
   // Helpful Indexes
   db.run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
@@ -195,8 +193,9 @@ db.all(`PRAGMA table_info(courses)`, (err, columns) => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_certificates_student ON certificates(student_id)`);
-      // =======================
+  db.run(`CREATE INDEX IF NOT EXISTS idx_certificates_student ON certificates(student_id)`);
+
+  // =======================
   // ADMISSIONS SYSTEM TABLES
   // =======================
   
@@ -286,7 +285,8 @@ db.all(`PRAGMA table_info(courses)`, (err, columns) => {
   // Index for faster queries
   db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_student ON fee_payments(student_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_fee_payments_receipt ON fee_payments(receipt_number)`);
-    // =======================
+
+  // =======================
   // ATTENDANCE TABLE
   // =======================
   db.run(`
@@ -306,19 +306,31 @@ db.all(`PRAGMA table_info(courses)`, (err, columns) => {
   // Index for faster attendance queries
   db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_enrollment ON attendance(enrollment_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)`);
-  db.get(`PRAGMA table_info(users)`, (err, row) => {
-  if (err) {
-    console.error('PRAGMA table_info error:', err.message);
-    return;
-  }
-  
-  // If no rows returned, table might not exist yet
-  if (!row) {
-    console.log('Users table may not exist yet, skipping CGPA check');
-    return;
-  }
-  
-  // Now get all columns
+
+  // =======================
+  // ADD MISSING COLUMNS (MOVED TO THE END - THIS IS CRITICAL!)
+  // =======================
+
+  // Add marks column to enrollments if it doesn't exist
+  db.all(`PRAGMA table_info(enrollments)`, (err, columns) => {
+    if (err) {
+      console.error("PRAGMA table_info(enrollments) error:", err.message);
+      return;
+    }
+    
+    const hasMarks = columns.some(col => col.name === "marks");
+    if (!hasMarks) {
+      db.run(`ALTER TABLE enrollments ADD COLUMN marks INTEGER`, (err) => {
+        if (err) {
+          console.error('ALTER TABLE add marks failed:', err.message);
+        } else {
+          console.log('✅ Added marks column to enrollments');
+        }
+      });
+    }
+  });
+
+  // Add CGPA column to users table if it doesn't exist
   db.all(`PRAGMA table_info(users)`, (err, columns) => {
     if (err) {
       console.error('PRAGMA table_info error:', err.message);
@@ -338,18 +350,12 @@ db.all(`PRAGMA table_info(courses)`, (err, columns) => {
       });
     }
   });
-});
-});  // ← This is the end of db.serialize()
+});  // ← End of db.serialize()
 
 // Debug: show created tables
 db.all("SELECT name FROM sqlite_master WHERE type='table'", [], (err, rows) => {
   if (err) console.error("Error:", err);
   else console.log("Tables created:", rows.map(r => r.name));
 });
-// Add this in your db.js after the existing user table setup
-// Add CGPA column to users table if it doesn't exist
-// Add CGPA column to users table if it doesn't exist
 
 module.exports = db;
-
-

@@ -777,6 +777,7 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
       return res.json({ ok: false, error: 'Not your university' });
     }
 // ✅ Verify program belongs to this university
+// ✅ Verify program belongs to this university
 if (req.body.program_id) {
   const program_id = Number(req.body.program_id);
   const prog = await get(
@@ -786,17 +787,18 @@ if (req.body.program_id) {
   if (!prog) {
     return res.json({ ok: false, error: 'Invalid program for this university' });
   }
-}
+} // ← ADD THIS CLOSING BRACKET
 
-    // ✅ Validate faculty if provided
-    if (faculty_id) {
-      const fac = await get(`SELECT id, role FROM users WHERE id=?`, [faculty_id]);
-      if (!fac) {
-        return res.json({ ok: false, error: 'Faculty user does not exist' });
-      }
-      if (fac.role !== 'faculty') {
-        return res.json({ ok: false, error: 'User is not a faculty' });
-      }
+// ✅ Validate faculty if provided
+if (faculty_id) {
+  const fac = await get(`SELECT id, role FROM users WHERE id=?`, [faculty_id]);
+  if (!fac) {
+    return res.json({ ok: false, error: 'Faculty user does not exist' });
+  }
+  if (fac.role !== 'faculty') {
+    return res.json({ ok: false, error: 'User is not a faculty' });
+  
+}
     }
     // Check duplicate course code in the same university
     const existing = await get(
