@@ -755,6 +755,7 @@ app.get('/fees/student/:student_id', async (req, res) => {
 
 // ===== Admin creates course in their university =====
 // ===== Admin creates course in their university =====
+// ===== Admin creates course in their university =====
 app.post('/admin/course', upload.single('notes'), async (req, res) => {
   try {
     const admin_id = Number(req.body.admin_id);
@@ -763,6 +764,7 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     const title = (req.body.title || '').trim();
     const credit_value = Number(req.body.credit_value);
     const faculty_id = req.body.faculty_id ? Number(req.body.faculty_id) : null;
+    const program_id = req.body.program_id ? Number(req.body.program_id) : null; // ← Extract program_id here
 
     if (!admin_id || !university_id || !code || !title || !credit_value) {
       return res.json({ ok: false, error: 'Missing fields' });
@@ -776,30 +778,29 @@ app.post('/admin/course', upload.single('notes'), async (req, res) => {
     if (!uni) {
       return res.json({ ok: false, error: 'Not your university' });
     }
-// ✅ Verify program belongs to this university
-// ✅ Verify program belongs to this university
-if (req.body.program_id) {
-  const program_id = Number(req.body.program_id);
-  const prog = await get(
-    `SELECT id FROM programs WHERE id=? AND university_id=?`,
-    [program_id, university_id]
-  );
-  if (!prog) {
-    return res.json({ ok: false, error: 'Invalid program for this university' });
-  }
-} // ← ADD THIS CLOSING BRACKET
 
-// ✅ Validate faculty if provided
-if (faculty_id) {
-  const fac = await get(`SELECT id, role FROM users WHERE id=?`, [faculty_id]);
-  if (!fac) {
-    return res.json({ ok: false, error: 'Faculty user does not exist' });
-  }
-  if (fac.role !== 'faculty') {
-    return res.json({ ok: false, error: 'User is not a faculty' });
-  
-}
+    // ✅ Verify program belongs to this university
+    if (program_id) {
+      const prog = await get(
+        `SELECT id FROM programs WHERE id=? AND university_id=?`,
+        [program_id, university_id]
+      );
+      if (!prog) {
+        return res.json({ ok: false, error: 'Invalid program for this university' });
+      }
     }
+
+    // ✅ Validate faculty if provided
+    if (faculty_id) {
+      const fac = await get(`SELECT id, role FROM users WHERE id=?`, [faculty_id]);
+      if (!fac) {
+        return res.json({ ok: false, error: 'Faculty user does not exist' });
+      }
+      if (fac.role !== 'faculty') {
+        return res.json({ ok: false, error: 'User is not a faculty' });
+      }  // ← FIXED: Removed extra bracket
+    }
+
     // Check duplicate course code in the same university
     const existing = await get(
       `SELECT id FROM courses WHERE code=? AND university_id=?`,
@@ -808,27 +809,30 @@ if (faculty_id) {
     if (existing) {
       return res.json({ ok: false, error: 'Course code already exists in this university' });
     }
+
     // Handle file upload (notes)
     let notes_filename = null, notes_url = null;
     if (req.file) {
       notes_filename = req.file.filename;
       notes_url = '/uploads/' + req.file.filename;
     }
+
     // Insert course
-    const program_id = req.body.program_id ? Number(req.body.program_id) : null;
-const r = await run(
-  `INSERT INTO courses(code,title,credit_value,university_id,program_id,faculty_id,notes_filename,notes_url)
-   VALUES(?,?,?,?,?,?,?,?)`,
-  [code, title, credit_value, university_id, program_id, faculty_id, notes_filename, notes_url]
-);
+    const r = await run(
+      `INSERT INTO courses(code,title,credit_value,university_id,program_id,faculty_id,notes_filename,notes_url)
+       VALUES(?,?,?,?,?,?,?,?)`,
+      [code, title, credit_value, university_id, program_id, faculty_id, notes_filename, notes_url]
+    );
+
     const course = await get(`SELECT * FROM courses WHERE id=?`, [r.lastID]);
+    
     // Real-time update
     io.emit('courseAdded', course);
 
     res.json({ ok: true, course });
   } catch (e) {
     console.error('Add course error:', e.message);
-    res.json({ ok: false, error: 'Failed to add course' });
+    res.json({ ok: false, error: 'Failed to add course: ' + e.message });
   }
 });
 // Public: courses by university
