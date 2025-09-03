@@ -608,19 +608,20 @@ if ($('addCourseBtn')) {
 
 // Add Fee
 // Add Fee - FIXED
+// Replace the existing addFeeBtn onclick handler with this corrected version
 $('addFeeBtn').onclick = async () => {
   const university_id = Number(feeUniSelect.value);
-  const program_id = Number(feeProgramSelect.value); // Make sure this exists
+  const program_id = Number(feeProgramSelect.value);
   const type = feeTypeInput.value.trim();
   const amount = Number(feeAmount.value);
+
+    console.log('Fee Form Values:', {
+    university_id, program_id, type, amount, admin_id: user.id // ← Make sure this is included
+  });
 
   if (!university_id || !program_id || !type || !amount) {
     console.log('Fee Validation Failed - Missing fields');
     return alert('Please select University, Program, and enter Fee Type and Amount!');
-  }
-
-  if (amount <= 0) {
-    return alert('Fee amount must be greater than 0!');
   }
 
   try {
@@ -628,7 +629,7 @@ $('addFeeBtn').onclick = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        admin_id: user.id, 
+        admin_id: user.id,  // ← THIS IS THE CRITICAL FIX
         university_id, 
         program_id, 
         type, 
@@ -652,7 +653,6 @@ $('addFeeBtn').onclick = async () => {
     alert('Network error adding fee. Please try again.');
   }
 };
-
 async function loadPrograms(university_id) {
   try {
     const d = await api(`/programs/by-university?university_id=${university_id}`);

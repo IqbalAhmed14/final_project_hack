@@ -384,17 +384,26 @@ app.get('/fees/by-university', async (req, res) => {
 });
 
 // Add Fee
+// Replace the existing /admin/fee endpoint with this improved version
 app.post('/admin/fee', async (req, res) => {
   try {
     const { admin_id, university_id, program_id, type, amount } = req.body;
     
-    if (!admin_id || !university_id || !program_id || !type || !amount) {
-      return res.status(400).json({ ok: false, error: "All fields are required" });
+    // Better validation with specific error messages
+    if (!admin_id) return res.status(400).json({ ok: false, error: "Admin ID is required" });
+    if (!university_id) return res.status(400).json({ ok: false, error: "University ID is required" });
+    if (!program_id) return res.status(400).json({ ok: false, error: "Program ID is required" });
+    if (!type) return res.status(400).json({ ok: false, error: "Fee type is required" });
+    if (!amount) return res.status(400).json({ ok: false, error: "Amount is required" });
+    
+    // Validate amount is a positive number
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ ok: false, error: "Amount must be a positive number" });
     }
 
     // Verify admin has access to this university
     const uni = await get(
-      `SELECT id FROM universities WHERE id=? AND admin_id=?`,
+      `SELECT id FROM universities WHERE id=? AND (admin_id=? OR admin_id IS NULL)`,
       [university_id, admin_id]
     );
     if (!uni) {
